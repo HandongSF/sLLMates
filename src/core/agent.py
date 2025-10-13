@@ -17,12 +17,6 @@ from src.utils.parsers import makeJSONToToolCall
 
 
 
-# 모델, 토크나이저, 트리머 인스턴스화
-llm = models.get_llm()
-tokenizer = models.get_tokenizer()
-trimmer = models.get_trimmer(tokenizer)
-tools_node = ToolNode(TOOLS_LIST)
-
 class State(TypedDict):
     variables: Dict[str, str]
     system_prompt: str
@@ -33,59 +27,103 @@ class State(TypedDict):
     final_answer: Optional[AIMessage]
 
 
-def query_or_respond(state: State):
-    filled_system_prompt = state["system_prompt"].format(**state["variables"])
-    trimmed_messages = trimmer.invoke([SystemMessage(filled_system_prompt)] + state["history"] + [state["query"]])
-    llm_with_tools = llm.bind_tools(TOOLS_LIST)
-    response = llm_with_tools.invoke(trimmed_messages)
-    content = response.content.strip()
+class LangChainAgent:
 
-    if content.startswith("<tool_call>"):
-        tools_call = AIMessage(content="", tool_calls=makeJSONToToolCall(content))
-        return {"messages": [tools_call], "final_answer": None}
-    else:
+    def __init__(self):
+        self.model = models.get_model()
+        self.tokenizer = models.get_tokenizer()
+        self.trimmer = models.get_trimmer(self.tokenizer)
+        self.tools = ToolNode(TOOLS_LIST)
+        self.app = self.create_graph()
+
+    def query_or_respond(self, state: State):
+        filled_system_prompt = state["system_prompt"].format(**state["variables"])
+
+        trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + state["history"] + [state["query"]])
+
+        llm_with_tools = self.llm.bind_tools(TOOLS_LIST)
+
+        response = llm_with_tools.invoke(trimmed_messages)
+
+        content = response.content.strip()
+        if content.startswith("<tool_call>"):
+            tools_call = AIMessage(content = "", tool_calls = makeJSONToToolCall(content))
+            return {
+                "variables": state["variables"],
+                "system_prompt": state["system_prompt"],
+                "messages": [tools_call],
+                "tools_result": None,
+                "query": state["query"],
+                "final_answer": None
+            }
+
         add_messages = [state["query"]] + [response]
-        return {"history": add_messages, "messages": None, "final_answer": response}
 
+        return {
+            "variables": state["variables"],
+            "system_prompt": state["system_prompt"],
+            "history": add_messages,
+            "messages": None,
+            "tools_result": None,
+            "query": state["query"],
+            "final_answer": response
+        }
 
-def check_for_tools(state: State):
-    return "tools" if state.get("messages") else END
+    def check_for_tools(self, state: State):
+        if state.get("messages"):
+            return "tools"
+        else:
+            return END
 
+    def run_tools_and_pass_through_state(self, state: State):
+        tools_result = self.tools.invoke(state["messages"])
 
-def run_tools_and_pass_through_state(state: State):
-    tools_result = tools_node.invoke(state["messages"])
-    return {"tools_result": tools_result}
+        return {
+            "variables": state["variables"],
+            "system_prompt": state["system_prompt"],
+            "messages": state["messages"],
+            "tools_result": tools_result,
+            "query": state["query"],
+            "final_answer": None
+        }
 
+    def generate(self, state: State):
+        filled_system_prompt = state["system_prompt"].format(**state["variables"])
 
-def generate(state: State):
-    filled_system_prompt = state["system_prompt"].format(**state["variables"])
-    conversation_messages = [
-        message for message in state["history"]
-        if message.type in ("human") or (message.type == "ai" and not message.tool_calls)
-    ]
-    trimmed_messages = trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + state["tools_result"] + [state["query"]])
-    response = llm.invoke(trimmed_messages)
-    add_messages = [state["query"]] + state["messages"] + state["tools_result"] + [response]
-    return {"history": add_messages, "final_answer": response}
+        conversation_messages = [
+            message
+            for message in state["history"]
+            if message.type in ("human") or (message.type == "ai" and not message.tool_calls)
+        ]
 
+        trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + state["tools_result"] + [state["query"]])
 
-def create_graph():
-    """LangGraph 워크플로우를 생성하고 컴파일합니다."""
-    workflow = StateGraph(state_schema=State)
+        response = self.model.invoke(trimmed_messages)
 
-    workflow.add_node("query_or_respond", query_or_respond)
-    workflow.add_node("run_tools_and_pass_through_state", run_tools_and_pass_through_state)
-    workflow.add_node("generate", generate)
+        add_messages = [state["query"]] + state["messages"] + state["tools_result"] + [response]
+
+        return {
+            "variables": state["variables"],
+            "system_prompt": state["system_prompt"],
+            "history": add_messages,
+            "messages": state["messages"],
+            "tools_result": state["tools_result"],
+            "query": state["query"],
+            "final_answer": response
+        }
     
-    workflow.add_edge(START, "query_or_respond")
-    workflow.add_conditional_edges("query_or_respond", check_for_tools, {END: END, "tools": "run_tools_and_pass_through_state"})
-    workflow.add_edge("run_tools_and_pass_through_state", "generate")
-    workflow.add_edge("generate", END)
+    def create_graph(self):
+        workflow = StateGraph(state_schema=State)
     
-    memory = SqliteSaver(conn=sqlite3.connect(config.SQLITE_DB_FILE, check_same_thread=False))
-    
-    return workflow.compile(checkpointer=memory)
-
-
-# 그래프 인스턴스 생성
-langgraph_app = create_graph()
+        workflow.add_node("query_or_respond", self.query_or_respond)
+        workflow.add_node("run_tools_and_pass_through_state", self.run_tools_and_pass_through_state)
+        workflow.add_node("generate", self.generate)
+        
+        workflow.add_edge(START, "query_or_respond")
+        workflow.add_conditional_edges("query_or_respond", self.check_for_tools, {END: END, "tools": "run_tools_and_pass_through_state"})
+        workflow.add_edge("run_tools_and_pass_through_state", "generate")
+        workflow.add_edge("generate", END)
+        
+        memory = SqliteSaver(conn=sqlite3.connect(config.SQLITE_DB_FILE, check_same_thread=False))
+        
+        return workflow.compile(checkpointer=memory)

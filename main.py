@@ -2,6 +2,7 @@ import os
 
 from src.ui.app import create_simple_ui
 from src.db.metadata import init_chat_metadata_db
+from src.core.agent import LangChainAgent
 
 
 
@@ -16,7 +17,9 @@ def initialize():
 
 
 def launch_app():
-    interface = create_simple_ui()
+    agent = LangChainAgent()
+
+    interface = create_simple_ui(agent.app)
     interface.launch(share=True, inbrowser=True, show_error=True)
 
 

@@ -1,18 +1,19 @@
 import gradio as gr
 import uuid
 from datetime import datetime
-
 from langchain.schema import HumanMessage, AIMessage
 
 from src import config
-from src.core.agent import langgraph_app
 from src.db.metadata import (
     save_chat_metadata, update_chat_metadata, get_chat_list,
     delete_chat, rename_chat, get_chat_name
 )
 
+
+
+
 # UI Helper Functions
-def create_chatbot_response(message, history, thread_id):
+def create_chatbot_response(message, history, thread_id, app):
     if not thread_id:
         history.append([message, "⚠️ '새 채팅'을 눌러 대화를 시작해주세요."])
         return history, ""
@@ -27,7 +28,7 @@ def create_chatbot_response(message, history, thread_id):
         input_messages = HumanMessage(content=message)
         response_parts = []
         
-        for step in langgraph_app.stream(
+        for step in app.stream(
             {
                 "variables": config.VARIABLES, 
                 "system_prompt": config.SYSTEM_PROMPT,
@@ -70,7 +71,7 @@ def generate_chat_name_from_message(message: str) -> str:
     return message[:27] + "..." if len(message) > 30 else message
 
 # Main Gradio UI Function
-def create_simple_ui():
+def create_simple_ui(app):
     css = """
     .gradio-container { 
         min-height: 80vh;
@@ -171,7 +172,7 @@ def create_simple_ui():
             
             try:
                 config = {"configurable": {"thread_id": selected_thread_id}}
-                state = langgraph_app.get_state(config)
+                state = app.get_state(config)
                 history = format_history_for_chatbot(state.values)
                 
                 chat_name = get_chat_name(selected_thread_id)
@@ -213,7 +214,7 @@ def create_simple_ui():
                 auto_name = generate_chat_name_from_message(message)
                 rename_chat(thread_id, auto_name)
             
-            return create_chatbot_response(message, history, thread_id)
+            return create_chatbot_response(message, history, thread_id, app)
 
         # 이벤트 바인딩
         new_chat_btn.click(

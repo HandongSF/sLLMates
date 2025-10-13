@@ -9,9 +9,6 @@ from langchain_core.messages import trim_messages, BaseMessage
 
 
 def get_embedding_model():
-    """
-    임베딩 모델을 로드하여 반환합니다.
-    """
     return HuggingFaceEmbeddings(
         model_name=config.EMBEDDING_MODEL_PATH,
         model_kwargs={'device': 'cuda'},
@@ -20,19 +17,21 @@ def get_embedding_model():
 
 
 def get_tokenizer():
-    """
-    LLM 토크나이저를 로드하여 반환합니다.
-    """
     return AutoTokenizer.from_pretrained(
         config.TOKENIZER_MODEL_PATH, 
         model_max_length=config.MODEL_CONTEXT_SIZE
     )
 
 
-def get_llm():
-    """
-    ChatLlamaCpp 모델을 로드하여 반환합니다.
-    """
+def count_tokens_with_tokenizer(messages: List[BaseMessage]) -> int:
+    tokenized_input = tokenizer.apply_chat_template(
+        [{'role': m.type, 'content': m.content} for m in messages],
+        return_tensors="pt"
+    )
+    return tokenized_input.shape[1]
+
+
+def get_model():
     return ChatLlamaCpp(
         model_path=config.LLM_MODEL_PATH,
         n_gpu_layers=-1,
@@ -52,17 +51,7 @@ def get_llm():
     )
 
 
-def get_trimmer(tokenizer):
-    """
-    메시지 길이를 조절하는 트리머를 생성하여 반환합니다.
-    """
-    def count_tokens_with_tokenizer(messages: List[BaseMessage]) -> int:
-        tokenized_input = tokenizer.apply_chat_template(
-            [{'role': m.type, 'content': m.content} for m in messages],
-            return_tensors="pt"
-        )
-        return tokenized_input.shape[1]
-
+def get_trimmer():
     return trim_messages(
         max_tokens=config.TRIMMER_MAX_TOKENS,
         strategy="last",
