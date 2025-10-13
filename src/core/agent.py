@@ -9,8 +9,9 @@ from langgraph.graph import START, StateGraph, END
 from langgraph.prebuilt import ToolNode
 from langgraph.graph.message import add_messages
 
-from src import config
-from src.core import models
+from src.config import SQLITE_DB_FILE
+from src.core.llm import LLM
+from src.core.trimmer import Trimmer
 from src.core.tools import TOOLS_LIST
 from src.utils.parsers import makeJSONToToolCall
 
@@ -28,13 +29,11 @@ class State(TypedDict):
 
 
 class LangChainAgent:
-
     def __init__(self):
-        self.model = models.get_model()
-        self.tokenizer = models.get_tokenizer()
-        self.trimmer = models.get_trimmer(self.tokenizer)
+        self.llm = LLM.get_llm()
+        self.trimmer = Trimmer.get_trimmer()
         self.tools = ToolNode(TOOLS_LIST)
-        self.app = self.create_graph()
+        self.app = self.create_workflow()
 
     def query_or_respond(self, state: State):
         filled_system_prompt = state["system_prompt"].format(**state["variables"])
@@ -98,7 +97,7 @@ class LangChainAgent:
 
         trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + state["tools_result"] + [state["query"]])
 
-        response = self.model.invoke(trimmed_messages)
+        response = self.llm.invoke(trimmed_messages)
 
         add_messages = [state["query"]] + state["messages"] + state["tools_result"] + [response]
 
@@ -112,8 +111,8 @@ class LangChainAgent:
             "final_answer": response
         }
     
-    def create_graph(self):
-        workflow = StateGraph(state_schema=State)
+    def create_workflow(self):
+        workflow = StateGraph(state_schema = State)
     
         workflow.add_node("query_or_respond", self.query_or_respond)
         workflow.add_node("run_tools_and_pass_through_state", self.run_tools_and_pass_through_state)
@@ -124,6 +123,6 @@ class LangChainAgent:
         workflow.add_edge("run_tools_and_pass_through_state", "generate")
         workflow.add_edge("generate", END)
         
-        memory = SqliteSaver(conn=sqlite3.connect(config.SQLITE_DB_FILE, check_same_thread=False))
+        memory = SqliteSaver(conn=sqlite3.connect(SQLITE_DB_FILE, check_same_thread = False))
         
-        return workflow.compile(checkpointer=memory)
+        return workflow.compile(checkpointer = memory)

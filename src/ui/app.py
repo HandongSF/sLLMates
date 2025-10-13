@@ -3,38 +3,47 @@ import uuid
 from datetime import datetime
 from langchain.schema import HumanMessage, AIMessage
 
-from src import config
+from main import agent
+from src.config import SYSTEM_PROMPT, VARIABLES
 from src.db.metadata import (
     save_chat_metadata, update_chat_metadata, get_chat_list,
-    delete_chat, rename_chat, get_chat_name
+    delete_chat, rename_chat, get_chat_name, generate_chat_name_from_message
 )
 
 
 
 
 # UI Helper Functions
-def create_chatbot_response(message, history, thread_id, app):
+def create_chatbot_response(message, history, thread_id):
     if not thread_id:
         history.append([message, "⚠️ '새 채팅'을 눌러 대화를 시작해주세요."])
         return history, ""
+
     if not message.strip():
+        return history, ""
+
+    if message.lower().strip() in ["exit", "q", "끝"]:
+        history.append([message, "대화를 종료합니다."])
         return history, ""
 
     history.append([message, "💭 생각 중..."])
     
-    config_dict = {"configurable": {"thread_id": thread_id}}
+    config = {"configurable": {"thread_id": thread_id}}
     
     try:
         input_messages = HumanMessage(content=message)
         response_parts = []
         
-        for step in app.stream(
+        for step in agent.app.stream(
             {
-                "variables": config.VARIABLES, 
-                "system_prompt": config.SYSTEM_PROMPT,
+                "variables": VARIABLES, 
+                "system_prompt": SYSTEM_PROMPT,
+                "messages": None, 
+                "tools_result": None,
                 "query": input_messages, 
+                "final_answer": None
             },
-            config=config_dict,
+            config=config,
             stream_mode="values",
         ):
             if "final_answer" in step and step["final_answer"]:
@@ -45,33 +54,38 @@ def create_chatbot_response(message, history, thread_id, app):
         
         full_response = "\n".join(response_parts) if response_parts else "응답을 생성하지 못했습니다."
         history[-1][1] = full_response
+        
+        # 메타데이터 업데이트
         update_chat_metadata(thread_id)
+        
     except Exception as e:
         print(f"응답 생성 오류: {e}")
         history[-1][1] = f"❌ 오류가 발생했습니다: {str(e)}"
     
     return history, ""
 
+#LangGraph state를 Gradio Chatbot 형식으로 변환
 def format_history_for_chatbot(thread_data):
     if not thread_data or 'history' not in thread_data:
         return []
+    
     history = thread_data.get('history', [])
     chatbot_history = []
+    
     for msg in history:
         if isinstance(msg, HumanMessage):
             chatbot_history.append([msg.content, None])
-        elif isinstance(msg, AIMessage) and not msg.tool_calls:
+        elif isinstance(msg, AIMessage):
             if chatbot_history and chatbot_history[-1][1] is None:
                 chatbot_history[-1][1] = msg.content
             else:
                 chatbot_history.append([None, msg.content])
+    
     return chatbot_history
 
-def generate_chat_name_from_message(message: str) -> str:
-    return message[:27] + "..." if len(message) > 30 else message
 
-# Main Gradio UI Function
-def create_simple_ui(app):
+# Gradio UI 
+def create_simple_ui():
     css = """
     .gradio-container { 
         min-height: 80vh;
@@ -172,7 +186,7 @@ def create_simple_ui(app):
             
             try:
                 config = {"configurable": {"thread_id": selected_thread_id}}
-                state = app.get_state(config)
+                state = agent.app.get_state(config)
                 history = format_history_for_chatbot(state.values)
                 
                 chat_name = get_chat_name(selected_thread_id)
@@ -214,7 +228,7 @@ def create_simple_ui(app):
                 auto_name = generate_chat_name_from_message(message)
                 rename_chat(thread_id, auto_name)
             
-            return create_chatbot_response(message, history, thread_id, app)
+            return create_chatbot_response(message, history, thread_id)
 
         # 이벤트 바인딩
         new_chat_btn.click(

@@ -1,6 +1,12 @@
 from langchain_core.tools import tool
 
-from src.rag.vector_store import vector_store_instance
+from src.config import RAGConfig
+from src.rag.vector_store import ChromaDBVectorStore
+
+
+
+
+chroma_db_vector_store = ChromaDBVectorStore()
 
 
 
@@ -19,7 +25,7 @@ def retrieve(query: str):
     if query == "__NONE__":
         return "No results found.", []
 
-    retrieved_docs = vector_store.similarity_search(query, k = 3)
+    retrieved_docs = chroma_db_vector_store.vector_store.similarity_search(query, k = RAGConfig.retrieval_k)
 
     if not retrieved_docs:
         return "No results found.", []
