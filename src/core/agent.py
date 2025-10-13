@@ -31,14 +31,14 @@ class State(TypedDict):
 class LangChainAgent:
     def __init__(self):
         self.llm = LLM.get_llm()
-        self.trimmer = Trimmer.get_trimmer()
+        self.trimmer = Trimmer()
         self.tools = ToolNode(TOOLS_LIST)
         self.app = self.create_workflow()
 
     def query_or_respond(self, state: State):
         filled_system_prompt = state["system_prompt"].format(**state["variables"])
 
-        trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + state["history"] + [state["query"]])
+        trimmed_messages = self.trimmer.trimmer.invoke([SystemMessage(filled_system_prompt)] + state["history"] + [state["query"]])
 
         llm_with_tools = self.llm.bind_tools(TOOLS_LIST)
 
@@ -95,7 +95,7 @@ class LangChainAgent:
             if message.type in ("human") or (message.type == "ai" and not message.tool_calls)
         ]
 
-        trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + state["tools_result"] + [state["query"]])
+        trimmed_messages = self.trimmer.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + state["tools_result"] + [state["query"]])
 
         response = self.llm.invoke(trimmed_messages)
 
@@ -126,3 +126,8 @@ class LangChainAgent:
         memory = SqliteSaver(conn=sqlite3.connect(SQLITE_DB_FILE, check_same_thread = False))
         
         return workflow.compile(checkpointer = memory)
+    
+
+
+
+agent = LangChainAgent()

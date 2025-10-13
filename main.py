@@ -1,18 +1,12 @@
 import os
 
-from src.ui.app import create_simple_ui
-from src.db.metadata import init_chat_metadata_db
-from src.core.agent import LangChainAgent
-
-
-
-
 os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID' 
 
+from src.ui.app import create_simple_ui
+from src.db.metadata import init_chat_metadata_db
 
 
 
-agent = LangChainAgent()
 
 if __name__ == "__main__":
 

@@ -1,7 +1,5 @@
 from pathlib import Path
 
-from src.core.tokenizer import count_tokens_with_tokenizer
-
 
 
 
@@ -50,7 +48,7 @@ class EmbeddingConfig:
     Embedding 모델 관련 설정
     """
     model_name = EMBEDDING_MODEL_PATH
-    model_kwargs = {'device': 'cuda'}
+    model_kwargs = {'device': 'cuda:0'}
     encode_kwargs = {'normalize_embeddings': True}
 
 
@@ -60,7 +58,6 @@ class TrimmerConfig:
     """
     max_tokens = 7000
     strategy = "last"
-    token_counter = count_tokens_with_tokenizer,
     include_system = True
     allow_partial = False
     start_on = "human"
