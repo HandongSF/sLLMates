@@ -1,7 +1,5 @@
 from pathlib import Path
 from dataclasses import dataclass
-from llama_cpp import llama_chat_format
-import datetime
 
 # 기본 디렉토리 경로
 
@@ -39,22 +37,8 @@ SQLITE_DB_FILE = str(DATA_DIR / "db" / "chat_db" / "threads.sqlite")
 """요약 추가 예정"""
 
 
-def my_llama3_handler(
-    llama,
-    **kwargs,
-):
-    """요약 추가 예정"""
-
-    base_handler = llama_chat_format.get_chat_completion_handler(llama.chat_format)
-
-    date_string = datetime.datetime.now().strftime("%d %b %Y")
-
-    return base_handler(
-        llama=llama,
-        date_string=date_string,
-        tools_in_user_message=False,
-        **kwargs,
-    )
+# Llama 클래스 사용 설정
+USING_LLAMA = True
 
 
 # 모델 설정
@@ -79,8 +63,6 @@ class LLMConfig:
         "main_gpu": 1, # gpu 0, 1 중 1을 메인 gpu로 선택
         "tensor_split": [1, 1], # 50:50으로 두 gpu의 vram에 모델 레이어를 나누어 올림 
         "min_p": 0,
-        "chat_format": "llama-3",
-        "chat_handler": my_llama3_handler,
     }
     verbose = True
 
@@ -112,7 +94,7 @@ class RAGConfig:
     chunk_size = 200
     chunk_overlap = 50
     batch_size = 16
-    retrieval_k = 3
+    retrieval_k = 10
 
 
 # 시스템 프롬프트 및 변수
@@ -123,6 +105,6 @@ VARIABLES = {
 """요약 추가 예정"""
 
 SYSTEM_PROMPT = """
-You are Llama3.1, a large language model trained by Meta, based on the Llama architecture. You are chatting with the user via the Chating app. This means most of the time your lines should be a sentence or two unless the user's request requires reasoning or long-form outputs. Never use emojis unless explicitly asked to. When you receive a tool call response, use the output to format an answer to the orginal user question. The response language is {language}.
+You are Llama3.1, a large language model trained by Meta, based on the Llama architecture. You are chatting with the user via the Chating app. Never use emojis unless explicitly asked to. When you receive a tool call response, use the output to format an answer to the orginal user question. The response language is {language}.
 """
 """요약 추가 예정"""

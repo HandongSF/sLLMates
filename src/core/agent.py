@@ -11,11 +11,12 @@ from langgraph.graph.message import add_messages
 from langchain_core.messages import trim_messages
 from langchain_community.chat_models import ChatLlamaCpp
 
-from src.config import SQLITE_DB_FILE
-from src.config import LLMConfig
-from src.config import TrimmerConfig
+from src.config import SQLITE_DB_FILE, USING_LLAMA, LLMConfig, TrimmerConfig
 from src.core.tools import TOOL_LIST
+from src.core.templete import convert_messages_to_text_format_llama3
+from src.utils.parsers import parse_llm_output
 from src.chat_models.ChatLlamaCpp_new import ChatLlamaCpp_new
+from src.chat_models.Llama_new import Llama_new
 
 
 langchain.debug = True
@@ -68,22 +69,42 @@ class LangChainAgent:
     """요약 추가 예정"""
 
     def __init__(self):
-        self.llm = ChatLlamaCpp_new(
-            model_path = LLMConfig.model_path,
-            n_ctx = LLMConfig.n_ctx,
-            f16_kv = LLMConfig.f16_kv,
-            use_mlock = LLMConfig.use_mlock,
-            n_batch = LLMConfig.n_batch,
-            n_gpu_layers = LLMConfig.n_gpu_layers,
-            max_tokens = LLMConfig.max_tokens,
-            temperature = LLMConfig.temperature,
-            top_p = LLMConfig.top_p,
-            stop = LLMConfig.stop,
-            top_k = LLMConfig.top_k,
-            use_mmap = LLMConfig.use_mmap,
-            model_kwargs = LLMConfig.model_kwargs,
-            verbose = LLMConfig.verbose,
-        )
+        if USING_LLAMA:
+            self.llm = Llama_new(
+                model_path = LLMConfig.model_path,
+                n_ctx = LLMConfig.n_ctx,
+                f16_kv = LLMConfig.f16_kv,
+                use_mlock = LLMConfig.use_mlock,
+                n_batch = LLMConfig.n_batch,
+                n_gpu_layers = LLMConfig.n_gpu_layers,
+                max_tokens = LLMConfig.max_tokens,
+                temperature = LLMConfig.temperature,
+                top_p = LLMConfig.top_p,
+                stop = LLMConfig.stop,
+                top_k = LLMConfig.top_k,
+                use_mmap = LLMConfig.use_mmap,
+                verbose = LLMConfig.verbose,
+                main_gpu = LLMConfig.model_kwargs["main_gpu"],
+                tensor_split = LLMConfig.model_kwargs["tensor_split"], 
+                min_p = LLMConfig.model_kwargs["min_p"],
+            )
+        else:
+            self.llm = ChatLlamaCpp_new(
+                model_path = LLMConfig.model_path,
+                n_ctx = LLMConfig.n_ctx,
+                f16_kv = LLMConfig.f16_kv,
+                use_mlock = LLMConfig.use_mlock,
+                n_batch = LLMConfig.n_batch,
+                n_gpu_layers = LLMConfig.n_gpu_layers,
+                max_tokens = LLMConfig.max_tokens,
+                temperature = LLMConfig.temperature,
+                top_p = LLMConfig.top_p,
+                stop = LLMConfig.stop,
+                top_k = LLMConfig.top_k,
+                use_mmap = LLMConfig.use_mmap,
+                model_kwargs = LLMConfig.model_kwargs,
+                verbose = LLMConfig.verbose,
+            )
 
         self.trimmer = trim_messages(
             max_tokens = TrimmerConfig.max_tokens,
@@ -103,9 +124,22 @@ class LangChainAgent:
 
         trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + state["history"] + [state["query"]])
 
-        llm_with_tools = self.llm.bind_tools(TOOL_LIST)
-
-        response = llm_with_tools.invoke(trimmed_messages)
+        if USING_LLAMA:
+            response_data = self.llm.create_completion(
+                prompt = convert_messages_to_text_format_llama3(trimmed_messages, TOOL_LIST),
+                max_tokens = LLMConfig.max_tokens,
+                temperature = LLMConfig.temperature,
+                top_p = LLMConfig.top_p,
+                min_p = LLMConfig.model_kwargs["min_p"],
+                stop = LLMConfig.stop,
+                top_k = LLMConfig.top_k,      
+            )
+            print("모델 답변: query_or_respond: " + repr(response_data))
+            response = parse_llm_output(response_data)
+            print("모델 답변 가공: query_or_respond: " + repr(response))
+        else:
+            llm_with_tools = self.llm.bind_tools(TOOL_LIST)
+            response = llm_with_tools.invoke(trimmed_messages)
 
         if response.tool_calls:
             return {
@@ -158,7 +192,21 @@ class LangChainAgent:
 
         trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + state["tools_result"] + [state["query"]])
 
-        response = self.llm.invoke(trimmed_messages)
+        if USING_LLAMA:
+            response_data = self.llm.create_completion(
+                prompt = convert_messages_to_text_format_llama3(trimmed_messages),
+                max_tokens = LLMConfig.max_tokens,
+                temperature = LLMConfig.temperature,
+                top_p = LLMConfig.top_p,
+                min_p = LLMConfig.model_kwargs["min_p"],
+                stop = LLMConfig.stop,
+                top_k = LLMConfig.top_k,      
+            )
+            print("모델 답변: generate: " + repr(response_data))
+            response = parse_llm_output(response_data)
+            print("모델 답변 가공: generate: " + repr(response))
+        else:
+            response = self.llm.invoke(trimmed_messages)
 
         add_messages = [state["query"]] + state["messages"] + state["tools_result"] + [response]
 
