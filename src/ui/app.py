@@ -16,54 +16,67 @@ agent = LangChainAgent()
 
 # UI Helper Functions
 def create_chatbot_response(message, history, thread_id):
+    if thread_id and len(history) == 1 and "새 채팅이 시작되었습니다" in (history[0][1] or ""):
+        auto_name = generate_chat_name_from_message(message)
+        rename_chat(thread_id, auto_name)
+
     if not thread_id:
         history.append([message, "⚠️ '새 채팅'을 눌러 대화를 시작해주세요."])
-        return history, ""
+        yield history, ""
+        return
 
     if not message.strip():
-        return history, ""
+        yield history, ""
+        return
 
     if message.lower().strip() in ["exit", "q", "끝"]:
         history.append([message, "대화를 종료합니다."])
-        return history, ""
+        yield history, ""
+        return
 
+    # 초기 표시
     history.append([message, "💭 생각 중..."])
-    
+    yield history, ""
+
     config = {"configurable": {"thread_id": thread_id}}
-    
+
     try:
         input_messages = HumanMessage(content=message)
-        response_parts = []
-        
+        partial_response = ""
+
+        # LangChain streaming
         for step in agent.app.stream(
             {
-                "variables": VARIABLES, 
+                "variables": VARIABLES,
                 "system_prompt": SYSTEM_PROMPT,
-                "messages": None, 
+                "messages": None,
                 "tools_result": None,
-                "query": input_messages, 
+                "query": input_messages,
                 "final_answer": None
             },
             config=config,
             stream_mode="values",
         ):
             if "final_answer" in step and step["final_answer"]:
-                if hasattr(step["final_answer"], 'content'):
-                    response_parts.append(step["final_answer"].content)
-                else:
-                    response_parts.append(str(step["final_answer"]))
-        
-        full_response = "\n".join(response_parts) if response_parts else "응답을 생성하지 못했습니다."
-        history[-1][1] = full_response
-        
+                text_piece = (
+                    step["final_answer"].content
+                    if hasattr(step["final_answer"], "content")
+                    else str(step["final_answer"])
+                )
+
+                # 🔤 한 글자씩 표시
+                for ch in text_piece:
+                    partial_response += ch
+                    history[-1][1] = partial_response
+                    yield history, ""
+
         # 메타데이터 업데이트
         update_chat_metadata(thread_id)
-        
+
     except Exception as e:
         print(f"응답 생성 오류: {e}")
         history[-1][1] = f"❌ 오류가 발생했습니다: {str(e)}"
-    
-    return history, ""
+        yield history, ""
 
 #LangGraph state를 Gradio Chatbot 형식으로 변환
 def format_history_for_chatbot(thread_data):
@@ -223,14 +236,6 @@ def create_simple_ui():
                 return gr.update(choices=choices, value=None), [], "없음", None
             return gr.update(), gr.update(), gr.update(), thread_id
 
-        def send_message_with_update(message, history, thread_id):
-            # 첫 메시지인 경우 자동 이름 생성
-            if thread_id and len(history) == 1 and history[0][1] and "(이)가 시작되었습니다" in history[0][1]:
-                auto_name = generate_chat_name_from_message(message)
-                rename_chat(thread_id, auto_name)
-            
-            return create_chatbot_response(message, history, thread_id)
-
         # 이벤트 바인딩
         new_chat_btn.click(
             start_new_chat,
@@ -255,25 +260,17 @@ def create_simple_ui():
             outputs=[chat_dropdown, chatbot, current_chat_info, thread_id_state]
         )
 
-        # 메시지 전송
+        # 메시지 전송 (streaming 적용)
         submit.click(
-            send_message_with_update,
+            fn=create_chatbot_response,           # 기존 send_message_with_update 대신 직접 사용
             inputs=[msg, chatbot, thread_id_state],
             outputs=[chatbot, msg]
-        ).then(
-            refresh_list,
-            inputs=[thread_id_state],
-            outputs=[chat_dropdown]
         )
-        
+
         msg.submit(
-            send_message_with_update,
+            fn=create_chatbot_response,
             inputs=[msg, chatbot, thread_id_state],
             outputs=[chatbot, msg]
-        ).then(
-            refresh_list,
-            inputs=[thread_id_state],
-            outputs=[chat_dropdown]
         )
 
         # 초기 로드
