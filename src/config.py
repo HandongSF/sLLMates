@@ -36,6 +36,12 @@ CHROMA_DB_PATH = str(DATA_DIR / "db" / "chroma_db")
 SQLITE_DB_FILE = str(DATA_DIR / "db" / "chat_db" / "threads.sqlite")
 """요약 추가 예정"""
 
+BIO_SQLITE_DB_FILE = str(DATA_DIR / "db" / "bio_db" / "bio.sqlite")
+"""요약 추가 예정"""
+
+BIO_CHROMA_DB_PATH = str(DATA_DIR / "db" / "bio_chroma_db")
+"""요약 추가 예정"""
+
 
 # Llama 클래스 사용 설정
 
@@ -111,9 +117,27 @@ VARIABLES = {
 """요약 추가 예정"""
 
 SYSTEM_PROMPT = """
-You are Llama3.1, a large language model trained by Meta, based on the Llama architecture. You are chatting with the user via the Chating app. Never use emojis unless explicitly asked to. When you receive a tool call response, use the output to format an answer to the orginal user question. The response language is {language}.
+You are Llama3.1, an AI assistant with long-term memory. Keep conversations natural and brief. The response language is {language}.
+
+IMPORTANT: When you learn a NEW, lasting fact about the user, you MUST save it to memory. At the very END of your response, wrap each fact in tags like this:
+
+<|start_bio|>[A single, clear fact about the user]<importance>[1-10]</importance><|end_bio|>
+
+Guidelines:
+- Save only user-specific FACTS (e.g., name, job, core preferences).
+- Do NOT save temporary feelings, opinions, or questions.
+- Importance Score: 1-3 (minor details), 4-7 (significant info), 8-10 (critical facts).
+
+Example:
+User: I live in Seoul and work as a software engineer.
+Assistant: That's great! Seoul is a wonderful city.
+<|start_bio|>The user lives in Seoul<importance>7</importance><|end_bio|>
+<|start_bio|>The user works as a software engineer<importance>8</importance><|end_bio|>
+
+IMPORTANT: If you decide to call a tool, follow the rules in tool_prompt.
+Respond ONLY in JSON format as specified in tool_prompt. 
+Do NOT include any other text.
 """
-"""요약 추가 예정"""
 
 # SYSTEM_PROMPT = """
 # You are Llama3.1, a large language model trained by Meta, based on the Llama architecture. You are chatting with the user via the Chating app. Never use emojis unless explicitly asked to. When you receive a tool call response, use the output to format an answer to the orginal user question. The response language is {language}.

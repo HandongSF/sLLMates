@@ -4,9 +4,7 @@ from langchain_community.document_loaders import TextLoader, DirectoryLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 
-from src.config import DATA_DIR, CHROMA_DB_PATH, RAGConfig
-from src.config import EmbeddingConfig
-
+from src.config import DATA_DIR, CHROMA_DB_PATH, BIO_CHROMA_DB_PATH, RAGConfig, EmbeddingConfig
 
 class ChromaDBVectorStore:
 
@@ -48,3 +46,32 @@ class ChromaDBVectorStore:
                     encode_kwargs = EmbeddingConfig.encode_kwargs,
                 )
             )
+
+
+class BioChromaDBVectorStore:
+
+    vector_store: Chroma
+    collection_name: str = "bio_memory"
+
+    def __init__(self):
+        self.vector_store = Chroma(
+            collection_name=self.collection_name,
+            persist_directory = CHROMA_DB_PATH,
+            embedding_function = None 
+        )
+
+    def embed_text(self, text: str):
+        embedding_function = self.vector_store._embedding_function
+        if embedding_function:
+            return embedding_function.embed_query(text)
+        return None
+
+
+    def get_collection_name(self):
+        return self.collection_name
+    
+    def get_bio_vector_store(self):
+        return self.vector_store
+    
+    def get_bio_collection(self):
+        return self.vector_store._collection

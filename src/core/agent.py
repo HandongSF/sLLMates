@@ -117,15 +117,13 @@ class LangChainAgent:
     def query_or_respond(self, state: State):
         filled_system_prompt = state["system_prompt"].format(**state["variables"])
 
-        # conversation_messages = [
-        #     message
-        #     for message in state["history"]
-        #     if message.type in ("human") or (message.type == "ai" and not message.tool_calls)
-        # ]
+        conversation_messages = [
+            message
+            for message in state["history"]
+            if message.type in ("human") or (message.type == "ai" and not message.tool_calls)
+        ]
 
-        # trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + [state["query"]])
-
-        trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + state["history"] + [state["query"]])
+        trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + [state["query"]])
 
         if USING_LLAMA:
             response_data = self.llm.create_completion(

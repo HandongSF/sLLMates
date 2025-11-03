@@ -2,7 +2,7 @@ import os
 
 os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID' 
 
-from src.db.metadata import init_chat_metadata_db
+from src.db.chat_metadata import init_chat_metadata_db
 from src.ui.app import create_simple_ui
 
 

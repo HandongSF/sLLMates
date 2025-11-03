@@ -2,10 +2,11 @@ from langchain_core.tools import tool
 from typing import Annotated
 
 from src.config import RAGConfig
-from src.rag.vector_store import ChromaDBVectorStore
+from src.db.vector_store import ChromaDBVectorStore
 
 
 chroma_db_vector_store = ChromaDBVectorStore()
+bio_chroma_db_vector_store = ChromaDBVectorStore()
 
 
 @tool(response_format="content_and_artifact")
@@ -44,5 +45,27 @@ def retrieve(
     
     return serialized, retrieved_docs
 
+@tool(response_format="content_and_artifact")
+def bio_retrieve(
+    query: Annotated[str, "A concise search query derived from the user's question about their personal information. For example: 'What university do I attend?' -> 'university'"]
+):
+    """"Use `bio_retrieve` in the following circumstances:\n - The user’s request depends on their personal information or past interactions.\n - The user refers to their profile, stored data, or something you previously discussed with them.\n  - Personal context is needed to provide a relevant or personalized response."
+    """
 
-TOOL_LIST = [retrieve, ]
+    if query == "__NONE__":
+        return "No results found.", []
+    
+    retrieved_docs = bio_chroma_db_vector_store.vector_store.similarity_search(query, k = RAGConfig.retrieval_k)
+
+    if not retrieved_docs:
+        return "No results found.", []
+    
+    serialized = "\n\n".join(
+        (f"{doc.page_content}")
+        for doc in retrieved_docs
+    )
+    
+    return serialized, retrieved_docs
+
+
+TOOL_LIST = [retrieve, bio_retrieve]

@@ -5,10 +5,12 @@ from langchain.schema import HumanMessage, AIMessage
 
 from src.core.agent import LangChainAgent
 from src.config import SYSTEM_PROMPT, VARIABLES
-from src.db.metadata import (
+from src.db.chat_metadata import (
     save_chat_metadata, update_chat_metadata, get_chat_list,
     delete_chat, rename_chat, get_chat_name, generate_chat_name_from_message
 )
+from src.db.bio_metadata import (
+    get_all_bios, add_bio, update_bio, delete_bio, get
 
 
 agent = LangChainAgent()
@@ -84,6 +86,94 @@ def format_history_for_chatbot(thread_data):
     
     return chatbot_history
 
+# Bio 관리 함수들
+def load_bio_list():
+    """Bio 목록을 테이블 형식으로 반환"""
+    bios = get_all_bios()
+    
+    if not bios:
+        return []
+    
+    # [ID, 텍스트, 중요도, 생성일, 수정일] 형식
+    return [
+        [
+            bio["id"][:8] + "...",  # ID는 앞 8자만
+            bio["text"][:50] + "..." if len(bio["text"]) > 50 else bio["text"],
+            bio["importance"],
+            bio["created_at"][:16] if bio["created_at"] else "",
+            bio["updated_at"][:16] if bio["updated_at"] else ""
+        ]
+        for bio in bios
+    ]
+
+def get_bio_choices():
+    """Dropdown용 Bio 선택지 반환"""
+    bios = get_all_bios()
+    if not bios:
+        return []
+    
+    return [(f"[{bio['importance']}] {bio['text'][:40]}...", bio["id"]) for bio in bios]
+
+def add_new_bio(text, importance):
+    """새로운 Bio 추가"""
+    if not text or not text.strip():
+        return load_bio_list(), "⚠️ 텍스트를 입력하세요", ""
+    
+    try:
+        importance_val = int(importance) if importance else 3
+        if not (1 <= importance_val <= 10):
+            return load_bio_list(), "⚠️ 중요도는 1-10 사이여야 합니다", ""
+        
+        bio_id = add_bio(text.strip(), importance_val)
+        return load_bio_list(), f"✅ Bio 추가 완료 (ID: {bio_id[:8]}...)", ""
+    except Exception as e:
+        print(f"Bio 추가 오류: {e}")
+        return load_bio_list(), f"❌ 추가 실패: {str(e)}", ""
+
+def update_existing_bio(bio_id, new_text, new_importance):
+    """기존 Bio 업데이트"""
+    if not bio_id:
+        return load_bio_list(), "⚠️ Bio를 선택하세요"
+    
+    if not new_text or not new_text.strip():
+        return load_bio_list(), "⚠️ 텍스트를 입력하세요"
+    
+    try:
+        importance_val = int(new_importance) if new_importance else None
+        if importance_val and not (1 <= importance_val <= 10):
+            return load_bio_list(), "⚠️ 중요도는 1-10 사이여야 합니다"
+        
+        update_bio(bio_id, text=new_text.strip(), importance=importance_val)
+        return load_bio_list(), f"✅ Bio 업데이트 완료"
+    except Exception as e:
+        print(f"Bio 업데이트 오류: {e}")
+        return load_bio_list(), f"❌ 업데이트 실패: {str(e)}"
+
+def delete_selected_bio(bio_id):
+    """선택된 Bio 삭제"""
+    if not bio_id:
+        return load_bio_list(), "⚠️ Bio를 선택하세요", None, "", ""
+    
+    try:
+        delete_bio(bio_id)
+        return load_bio_list(), "✅ Bio 삭제 완료", None, "", ""
+    except Exception as e:
+        print(f"Bio 삭제 오류: {e}")
+        return load_bio_list(), f"❌ 삭제 실패: {str(e)}", bio_id, "", ""
+
+def load_bio_for_edit(bio_id):
+    """선택된 Bio의 정보를 편집 필드에 로드"""
+    if not bio_id:
+        return "", ""
+    
+    try:
+        bio = get_bio_by_id(bio_id)
+        if bio:
+            return bio["text"], str(bio["importance"])
+        return "", ""
+    except Exception as e:
+        print(f"Bio 로드 오류: {e}")
+        return "", ""
 
 # Gradio UI 
 def create_simple_ui():
