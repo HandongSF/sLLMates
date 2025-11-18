@@ -11,7 +11,7 @@ from langgraph.graph.message import add_messages
 from langchain_core.messages import trim_messages
 from langchain_community.chat_models import ChatLlamaCpp
 
-from src.config import SQLITE_DB_FILE, USING_LLAMA, LLMConfig, TrimmerConfig, BIO_EXPLANATION_PROMPT
+from src.config import SQLITE_DB_FILE, USING_LLAMA, LLMConfig, TrimmerConfig, BIO_EXPLANATION_PROMPT, BIO_PROMPT
 from src.core.tools import TOOL_LIST
 from src.core.templete import convert_messages_to_text_format_llama3
 from src.utils.parsers import parse_llm_output
@@ -138,12 +138,34 @@ class LangChainAgent:
             "bio_result":bio_result
         }
     
-    def save_bio_memory(self, state:State):
-        if state["final_answer"]:
-            bio_list = self.bio_manager.extract_bio_with_importance(state["final_answer"].content)
+    def extract_and_save_bio_memory(self, state:State):
+        filled_system_prompt = state["system_prompt"].format(**state["variables"])
+
+        bio_prompt = BIO_PROMPT
+
+        trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + [bio_prompt] + [state["query"]])
+
+        if USING_LLAMA:
+            response_data = self.llm.create_completion(
+                prompt = convert_messages_to_text_format_llama3(trimmed_messages),
+                max_tokens = LLMConfig.max_tokens,
+                temperature = LLMConfig.temperature,
+                top_p = LLMConfig.top_p,
+                min_p = LLMConfig.model_kwargs["min_p"],
+                stop = LLMConfig.stop,
+                top_k = LLMConfig.top_k,      
+            )
+            print("extract_and_save_bio_memory 결과: " + repr(response_data))
+            response = parse_llm_output(response_data)
+            print("extract_and_save_bio_memory 결과: " + repr(response))
+        else:
+            response = self.llm.invoke(trimmed_messages)
+
+        if response:
+            bio_list = self.bio_manager.extract_bio_with_importance(response.content)
             if bio_list:
                 save_or_update_bio(bio_list)
-            state["final_answer"].content = self.bio_manager.clean_bio_tags(state["final_answer"].content)
+            #state["final_answer"].content = self.bio_manager.clean_bio_tags(state["final_answer"].content)
 
         return 
 
@@ -264,14 +286,14 @@ class LangChainAgent:
         workflow.add_node("query_or_respond", self.query_or_respond)
         workflow.add_node("run_tools_and_pass_through_state", self.run_tools_and_pass_through_state)
         workflow.add_node("generate", self.generate)
-        workflow.add_node("save_bio_memory", self.save_bio_memory)
+        workflow.add_node("extract_and_save_bio_memory", self.extract_and_save_bio_memory)
         
         workflow.add_edge(START, "retrieve_bio_memory")
         workflow.add_edge("retrieve_bio_memory", "query_or_respond")
-        workflow.add_conditional_edges("query_or_respond", self.check_for_tools, {"no_tool": "save_bio_memory", "tools": "run_tools_and_pass_through_state"})
+        workflow.add_conditional_edges("query_or_respond", self.check_for_tools, {"no_tool": "extract_and_save_bio_memory", "tools": "run_tools_and_pass_through_state"})
         workflow.add_edge("run_tools_and_pass_through_state", "generate")
-        workflow.add_edge("generate", "save_bio_memory")
-        workflow.add_edge("save_bio_memory", END)
+        workflow.add_edge("generate", "extract_and_save_bio_memory")
+        workflow.add_edge("extract_and_save_bio_memory", END)
         
         memory = SqliteSaver(conn=sqlite3.connect(SQLITE_DB_FILE, check_same_thread = False))
         
