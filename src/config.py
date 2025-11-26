@@ -89,7 +89,7 @@ class EmbeddingConfig:
 class TrimmerConfig:
     """Trimmer 관련 설정"""
 
-    max_tokens = 3000
+    max_tokens = 2000
     strategy = "last"
     include_system = True
     allow_partial = False
@@ -147,7 +147,3 @@ Below are the user queries:
 BIO_EXPLANATION_PROMPT = """
 \nBelow are important information about the user:\n"""
 
-# SYSTEM_PROMPT = """
-# You are Llama3.1, a large language model trained by Meta, based on the Llama architecture. You are chatting with the user via the Chating app. Never use emojis unless explicitly asked to. When you receive a tool call response, use the output to format an answer to the orginal user question. The response language is {language}.
-# """
-# """요약 추가 예정"""
