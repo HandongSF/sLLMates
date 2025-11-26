@@ -11,13 +11,15 @@ from langgraph.graph.message import add_messages
 from langchain_core.messages import trim_messages
 from langchain_community.chat_models import ChatLlamaCpp
 
-from src.config import SQLITE_DB_FILE, USING_LLAMA, LLMConfig, TrimmerConfig
+from src.config import SQLITE_DB_FILE, USING_LLAMA, LLMConfig, TrimmerConfig, BIO_EXPLANATION_PROMPT, BIO_PROMPT
 from src.core.tools import TOOL_LIST
 from src.core.templete import convert_messages_to_text_format_llama3
 from src.utils.parsers import parse_llm_output
 from src.chat_models.ChatLlamaCpp_new import ChatLlamaCpp_new
 from src.chat_models.Llama_new import Llama_new
-
+from src.db.bio_metadata import search_similar_bios, save_or_update_bio
+from src.tool.bio_manager import BioManager
+import time
 
 langchain.debug = True
 
@@ -38,6 +40,9 @@ class State(TypedDict):
     """요약 추가 예정"""
 
     tools_result: Optional[List[ToolMessage]]
+    """요약 추가 예정"""
+
+    bio_result: Optional[str]
     """요약 추가 예정"""
 
     query: HumanMessage
@@ -67,6 +72,8 @@ class LangChainAgent:
 
     app: any
     """요약 추가 예정"""
+
+    bio_manager: BioManager
 
     def __init__(self):
         if USING_LLAMA:
@@ -114,6 +121,56 @@ class LangChainAgent:
 
         self.app = self.create_workflow()
 
+        self.bio_manager = BioManager()
+
+    def retrieve_bio_memory(self, state: State):
+        bio_dict = search_similar_bios(state["query"].content, 5)
+
+        bio_result = BIO_EXPLANATION_PROMPT
+
+        if bio_dict:
+            for bio in bio_dict[:10]:
+                bio_result += f"-{bio["document"]}\n"
+        else:
+            bio_result = ""
+
+        return {
+            "bio_result":bio_result
+        }
+    
+    def extract_and_save_bio_memory(self, state:State):
+        start = time.time()
+        bio_prompt = BIO_PROMPT
+
+        trimmed_messages = self.trimmer.invoke([SystemMessage(bio_prompt)] + [state["query"]])
+
+        if USING_LLAMA:
+            response_data = self.llm.create_completion(
+                prompt = convert_messages_to_text_format_llama3(trimmed_messages),
+                max_tokens = LLMConfig.max_tokens,
+                temperature = LLMConfig.temperature,
+                top_p = LLMConfig.top_p,
+                min_p = LLMConfig.model_kwargs["min_p"],
+                stop = LLMConfig.stop,
+                top_k = LLMConfig.top_k,      
+            )
+            response = parse_llm_output(response_data)
+            print("extract_and_save_bio_memory 결과: " + repr(response))
+        else:
+            response = self.llm.invoke(trimmed_messages)
+
+        if response:
+            bio_list = self.bio_manager.extract_bio_with_importance(response.content)
+            if bio_list:
+                save_or_update_bio(bio_list)
+            #state["final_answer"].content = self.bio_manager.clean_bio_tags(state["final_answer"].content)
+        end = time.time()
+        print(f"extract_and_save_bio_memory 실행 시간: {end - start:.5f}초")
+        return 
+
+
+
+
     def query_or_respond(self, state: State):
         filled_system_prompt = state["system_prompt"].format(**state["variables"])
 
@@ -123,7 +180,7 @@ class LangChainAgent:
             if message.type in ("human") or (message.type == "ai" and not message.tool_calls)
         ]
 
-        trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + [state["query"]])
+        trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + [state["bio_result"]] + conversation_messages + [state["query"]])
 
         if USING_LLAMA:
             response_data = self.llm.create_completion(
@@ -151,7 +208,7 @@ class LangChainAgent:
                 "query": state["query"],
                 "final_answer": None
             }
-
+        
         add_messages = [state["query"]] + [response]
 
         return {
@@ -168,7 +225,7 @@ class LangChainAgent:
         if state.get("messages"):
             return "tools"
         else:
-            return END
+            return "no_tool"
 
     def run_tools_and_pass_through_state(self, state: State):
         tools_result = self.tools.invoke(state["messages"])
@@ -191,7 +248,7 @@ class LangChainAgent:
             if message.type in ("human") or (message.type == "ai" and not message.tool_calls)
         ]
 
-        trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + state["tools_result"] + [state["query"]])
+        trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + [state["bio_result"]] + conversation_messages + state["tools_result"] + [state["query"]])
 
         if USING_LLAMA:
             response_data = self.llm.create_completion(
@@ -224,14 +281,18 @@ class LangChainAgent:
     def create_workflow(self):
         workflow = StateGraph(state_schema = State)
     
+        workflow.add_node("retrieve_bio_memory", self.retrieve_bio_memory)
         workflow.add_node("query_or_respond", self.query_or_respond)
         workflow.add_node("run_tools_and_pass_through_state", self.run_tools_and_pass_through_state)
         workflow.add_node("generate", self.generate)
+        workflow.add_node("extract_and_save_bio_memory", self.extract_and_save_bio_memory)
         
-        workflow.add_edge(START, "query_or_respond")
-        workflow.add_conditional_edges("query_or_respond", self.check_for_tools, {END: END, "tools": "run_tools_and_pass_through_state"})
+        workflow.add_edge(START, "retrieve_bio_memory")
+        workflow.add_edge("retrieve_bio_memory", "query_or_respond")
+        workflow.add_conditional_edges("query_or_respond", self.check_for_tools, {"no_tool": "extract_and_save_bio_memory", "tools": "run_tools_and_pass_through_state"})
         workflow.add_edge("run_tools_and_pass_through_state", "generate")
-        workflow.add_edge("generate", END)
+        workflow.add_edge("generate", "extract_and_save_bio_memory")
+        workflow.add_edge("extract_and_save_bio_memory", END)
         
         memory = SqliteSaver(conn=sqlite3.connect(SQLITE_DB_FILE, check_same_thread = False))
         

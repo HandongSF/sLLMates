@@ -36,6 +36,9 @@ CHROMA_DB_PATH = str(DATA_DIR / "db" / "chroma_db")
 SQLITE_DB_FILE = str(DATA_DIR / "db" / "chat_db" / "threads.sqlite")
 """요약 추가 예정"""
 
+BIO_CHROMA_DB_PATH = str(DATA_DIR / "db" / "bio_chroma_db")
+"""요약 추가 예정"""
+
 
 # Llama 클래스 사용 설정
 
@@ -66,7 +69,7 @@ class LLMConfig:
     use_mmap = True
     model_kwargs = {
         "main_gpu": 1, # gpu 0, 1 중 1을 메인 gpu로 선택
-        "tensor_split": [0.3, 0.7], # 50:50으로 두 gpu의 vram에 모델 레이어를 나누어 올림 
+        "tensor_split": [0.05, 0.95], # 50:50으로 두 gpu의 vram에 모델 레이어를 나누어 올림 
         "min_p": 0,
         "flash_attn": True,
     }
@@ -86,7 +89,7 @@ class EmbeddingConfig:
 class TrimmerConfig:
     """Trimmer 관련 설정"""
 
-    max_tokens = 3000
+    max_tokens = 2000
     strategy = "last"
     include_system = True
     allow_partial = False
@@ -113,9 +116,34 @@ VARIABLES = {
 SYSTEM_PROMPT = """
 You are Llama3.1, a large language model trained by Meta, based on the Llama architecture. You are chatting with the user via the Chating app. Never use emojis unless explicitly asked to. When you receive a tool call response, use the output to format an answer to the orginal user question. The response language is {language}.
 """
-"""요약 추가 예정"""
 
-# SYSTEM_PROMPT = """
-# You are Llama3.1, a large language model trained by Meta, based on the Llama architecture. You are chatting with the user via the Chating app. Never use emojis unless explicitly asked to. When you receive a tool call response, use the output to format an answer to the orginal user question. The response language is {language}.
-# """
-# """요약 추가 예정"""
+BIO_PROMPT = """
+You are Llama3.1, a large language model trained by Meta. 
+Your task is ONLY to extract long-term, meaningful facts about the user.
+
+If you find a new, stable fact about the user, you MUST output it using the EXACT format below:
+
+<bio>the fact</bio>
+<importance>N</importance>
+
+You must follow this format EXACTLY.
+No extra text before, between, or after these tags.
+
+Save only long-term or meaningful information (preferences, background, personality, health, goals).
+Ignore trivial or temporary details (e.g., current location, mood, filler expressions, greetings).
+
+Examples (follow the exact format):
+<bio>The user is allergic to peanuts.</bio>
+<importance>9</importance>
+
+<bio>The user's birthday is May 12.</bio>
+<importance>8</importance>
+
+If there is no new meaningful user fact, output nothing.
+
+Below are the user queries:
+"""
+
+BIO_EXPLANATION_PROMPT = """
+\nBelow are important information about the user:\n"""
+

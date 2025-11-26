@@ -82,5 +82,5 @@ def parse_llm_output(response_data: dict) -> AIMessage:
             start_index = len(text_output) - len(text_output[start_index:].lstrip())
         return AIMessage(content = "", tool_calls = tool_calls)
 
-    except json.JSONDecodeError:
+    except Exception:
         return AIMessage(content = text_output)

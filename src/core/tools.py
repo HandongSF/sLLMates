@@ -2,10 +2,11 @@ from langchain_core.tools import tool
 from typing import Annotated
 
 from src.config import RAGConfig
-from src.rag.vector_store import ChromaDBVectorStore
+from src.db.vector_store import ChromaDBVectorStore
 
 
 chroma_db_vector_store = ChromaDBVectorStore()
+bio_chroma_db_vector_store = ChromaDBVectorStore()
 
 
 @tool(response_format="content_and_artifact")
