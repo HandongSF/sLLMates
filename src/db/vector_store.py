@@ -70,7 +70,6 @@ class BioChromaDBVectorStore:
             return embedding_function.embed_query(text)
         return None
 
-
     def get_collection_name(self):
         return self.collection_name
     

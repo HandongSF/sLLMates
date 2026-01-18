@@ -21,7 +21,6 @@ def get_bio_chroma_collection():
     return _vector_store_collection
 
 
-
 def init_bio_db():
     global _vector_store_instance, _vector_store_collection
     if _vector_store_instance is None:
@@ -328,6 +327,7 @@ def get_bio_by_id(bio_id: str) -> Optional[Dict]:
         print(f"[Bio DB] Bio 조회 실패: {e}")
         return None
 
+
 def count_all_bios() -> int:
     """
     전체 bio 개수를 반환합니다. (API 사용)
@@ -343,6 +343,7 @@ def count_all_bios() -> int:
     except Exception as e:
         print(f"[Bio DB] Bio 개수 조회 실패: {e}")
         return 0
+
 
 def save_or_update_bio(new_bio_blocks: List[Dict], similarity_threshold: float = 0.85):
     """

@@ -21,20 +21,6 @@ def retrieve(
     
     retrieved_docs = chroma_db_vector_store.vector_store.similarity_search(query, k = RAGConfig.retrieval_k)
 
-    # results_with_scores = chroma_db_vector_store.vector_store.similarity_search_with_score(
-    #     query, k = RAGConfig.retrieval_k
-    # )
-
-    # if not results_with_scores:
-    #     return "No results found.", []
-    
-    # DISTANCE_THRESHOLD = 0.5
-
-    # filtered_docs = [
-    #     doc for doc, score in results_with_scores 
-    #     if score < DISTANCE_THRESHOLD
-    # ]
-
     if not retrieved_docs:
         return "No results found.", []
     

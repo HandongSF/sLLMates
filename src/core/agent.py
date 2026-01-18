@@ -25,55 +25,60 @@ langchain.debug = True
 
 
 class State(TypedDict):
-    """요약 추가 예정"""
+    """LangGraph에서 사용하는 에이전트 전체 상태(State).
+
+    사용자 입력, 시스템 프롬프트, 대화 히스토리, tool 실행 결과,
+    bio memory 검색 결과, 최종 응답을 모두 포함한다.
+    """
 
     variables: Dict[str, str]
-    """요약 추가 예정"""
+    """시스템 프롬프트 템플릿에 주입될 변수들"""
 
     system_prompt: str
-    """요약 추가 예정"""
+    """LLM에 전달되는 기본 시스템 프롬프트 (format string)"""
 
     history: Annotated[Sequence[BaseMessage], add_messages]
-    """요약 추가 예정"""
+    """tool 호출이 없는 순수 대화 히스토리 (누적됨)"""
 
     messages: Optional[List[BaseMessage]]
-    """요약 추가 예정"""
+    """tool 호출이 포함된 임시 메시지 (tool 실행용)"""
 
     tools_result: Optional[List[ToolMessage]]
-    """요약 추가 예정"""
+    """tool 실행 결과 메시지"""
 
     bio_result: Optional[str]
-    """요약 추가 예정"""
+    """bio memory 검색 결과를 시스템 컨텍스트로 변환한 문자열"""
 
     query: HumanMessage
-    """요약 추가 예정"""
+    """현재 사용자 입력"""
 
     final_answer: Optional[AIMessage]
-    """요약 추가 예정"""
+    """최종 LLM 응답"""
 
 
 class LangChainAgent:
-    """요약 추가 예정
+    """sLLM 기반 챗봇 에이전트.
 
-    디테일 추가 예정
+    - LangGraph를 사용해 상태 기반 워크플로우 구성
+    - Tool calling 지원
+    - Bio memory 검색 및 저장(RAG-like memory)
+    - llama.cpp 기반 sLLM 실행
     """
 
     llm: ChatLlamaCpp
-    """요약 추가 예정"""
+    """llama.cpp 기반 sLLM 모델 래퍼"""
 
     trimmer: any
-    """요약 추가 예정"""
-
-    #tool_index: ToolIndex
-    """요약 추가 예정"""
+    """대화 토큰 수를 제한하기 위한 메시지 트리머"""
 
     tools: ToolNode
-    """요약 추가 예정"""
+    """LangGraph에서 실행되는 tool 노드"""
 
     app: any
-    """요약 추가 예정"""
+    """컴파일된 LangGraph 애플리케이션"""
 
     bio_manager: BioManager
+    """bio memory 추출 및 중요도 판단 로직"""
 
     def __init__(self):
         if USING_LLAMA:
@@ -167,9 +172,6 @@ class LangChainAgent:
         end = time.time()
         print(f"extract_and_save_bio_memory 실행 시간: {end - start:.5f}초")
         return 
-
-
-
 
     def query_or_respond(self, state: State):
         filled_system_prompt = state["system_prompt"].format(**state["variables"])

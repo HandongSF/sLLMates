@@ -4,46 +4,45 @@ from dataclasses import dataclass
 # 기본 디렉토리 경로
 
 BASE_DIR = Path(__file__).parent.parent.resolve()
-"""요약 추가 예정"""
+"""base directory path"""
 
 MODELS_DIR = BASE_DIR / "models"
-"""요약 추가 예정"""
+"""Model directory path"""
 
 DATA_DIR = BASE_DIR / "data"
-"""요약 추가 예정"""
+"""Data directory path"""
 
 
 # 모델 경로
 
 LLM_MODEL_PATH = str(MODELS_DIR / "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf")
-"""요약 추가 예정"""
+"""LLM Model path"""
 
 EMBEDDING_MODEL_PATH = str(MODELS_DIR / "Qwen3-Embedding-0.6B")
-"""요약 추가 예정"""
+"""Embedding Model path"""
 
 TOKENIZER_MODEL_PATH = str(MODELS_DIR / "Meta-Llama-3.1-8B-Instruct_tokenizer")
-"""요약 추가 예정"""
+"""Tokenizer Model path"""
 
 
 # 데이터 및 DB 경로
 
 DOCUMENTS_PATH = str(DATA_DIR / "documents")
-"""요약 추가 예정"""
+"""Documents path"""
 
 CHROMA_DB_PATH = str(DATA_DIR / "db" / "chroma_db")
-"""요약 추가 예정"""
+"""Chroma db path"""
 
 SQLITE_DB_FILE = str(DATA_DIR / "db" / "chat_db" / "threads.sqlite")
-"""요약 추가 예정"""
+"""Sqlite db path"""
 
 BIO_CHROMA_DB_PATH = str(DATA_DIR / "db" / "bio_chroma_db")
-"""요약 추가 예정"""
+"""Bio Chroma db path"""
 
 
 # Llama 클래스 사용 설정
 
 USING_LLAMA = True
-"""요약 추가 예정"""
 
 
 # 모델 설정
@@ -60,11 +59,8 @@ class LLMConfig:
     n_gpu_layers = -1
     max_tokens = -1
     temperature = 1.0
-    # temperature = 0.8
     top_p = 1
-    # top_p = 0.95
     stop = ["<|end_of_text|>", "<|eot_id|>"]
-    # stop = ["<|end_of_text|>", "<|eot_id|>"]
     top_k = 20
     use_mmap = True
     model_kwargs = {

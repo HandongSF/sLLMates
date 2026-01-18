@@ -4,7 +4,6 @@ from datetime import datetime
 from src.config import SQLITE_DB_FILE
 
 
-
 def init_chat_metadata_db():
     """
     채팅 메타데이터 테이블이 없으면 생성
