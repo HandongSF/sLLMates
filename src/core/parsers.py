@@ -4,9 +4,7 @@ from typing import List
 from langchain_core.messages import ToolCall
 from langchain.schema import AIMessage
 
-def parse_llm_output(response_data: dict) -> AIMessage:
-    text_output = response_data['choices'][0]['text'].strip()
-
+def parse_llm_output(text_output) -> AIMessage:
     tool_calls: List[ToolCall] = []
 
     decoder = json.JSONDecoder()

@@ -30,10 +30,6 @@ CONFIG = {
         "stop": ["<|end_of_text|>", "<|eot_id|>"],
         "top_k": 20,
     },
-    """LLM 모델 관련 설정
-
-    - model_path : 
-    """
 
     # 임베딩 모델 설정
 
@@ -42,10 +38,6 @@ CONFIG = {
         "model_kwargs": {'device': 'cuda'},
         "encode_kwargs": {'normalize_embeddings': True},
     },
-    """LLM 모델 관련 설정
-
-    - model_path : 
-    """
 
     # 트리머 설정
 
@@ -56,10 +48,6 @@ CONFIG = {
         "allow_partial": False,
         "start_on": "human",
     },
-    """Trimmer 관련 설정
-
-    - 
-    """
 
     # RAG 설정
 
@@ -69,14 +57,12 @@ CONFIG = {
         "batch_size": 16,
         "retrieval_k": 5,
     },
-    """RAG 파이프라인 관련 설정"""
 
     # 시스템 프롬프트 및 변수 설정
 
     "VARIABLES": {
         "language": "Korean",
     },
-    """시스템 프롬프트에 주입할 변수 입력"""
 
     "SYSTEM_PROMPT": """
     You are Llama3.1, a large language model trained by Meta, based on the Llama architecture. You are chatting with the user via the Chating app. Never use emojis unless explicitly asked to. When you receive a tool call response, use the output to format an answer to the orginal user question. The response language is {language}.
@@ -146,26 +132,28 @@ CONFIG = {
 
     # 커스텀 챗 핸들러 사용 설정
 
-    "USE_CUSTOM_CHAT_HANDLER": False,
+    "USE_CUSTOM_CHAT_HANDLER": True,
 
     "FORMATTER_CONFIG": {
         "eos_token": "<|eot_id|>",
         "bos_token": "<|begin_of_text|>",
     },
 
-    "CUSTOM_CHAT_TEMPLATE": """
-    {{- bos_token }} 
+    "CUSTOM_CHAT_TEMPLATE_VARIABLES": {
+        ""
+    },
 
+    "CUSTOM_CHAT_TEMPLATE": """
     {%- if custom_tools is defined %} 
         {%- set tools = custom_tools %} 
     {%- endif %} 
 
     {%- if not tools_in_user_message is defined %} 
-        {%- set tools_in_user_message = true %} 
+        {%- set tools_in_user_message = false %} 
     {%- endif %} 
 
     {%- if not date_string is defined %} 
-        {%- set date_string = "26 Jul 2024" %} 
+        {%- set date_string = strftime_now('%d %b %Y') | default("26 Jul 2024", true) %} 
     {%- endif %} 
 
     {%- if not tools is defined %} 

@@ -1,7 +1,7 @@
 import sys
 import sqlite3
 import time
-import pprint
+from pprint import pprint
 from datetime import datetime
 import importlib
 from typing import Sequence, Dict, List, Optional
@@ -26,9 +26,7 @@ from langchain_community.chat_models import ChatLlamaCpp
 
 from src.config import SELECTED_CONFIG_FILE, SQLITE_DB_FILE
 from src.db.vector_store import ChromaDBVectorStore
-from src.core.tool import TOOL_LIST
 from src.db.bio_metadata import search_similar_bios, save_or_update_bio
-from src.core.templete import convert_messages_to_text_format_llama3
 from src.core.parsers import parse_llm_output
 from src.core.bio_manager import BioManager
 
@@ -111,9 +109,9 @@ class ChatAgent:
 
         # formatter 선언
         if self.config.get("USE_CUSTOM_CHAT_HANDLER", False):
-            if self.config.get("CUSTOM_CHAT_FORMAT", "") and self.config.get("FORMATTER_CONFIG", "").get("eos_token", "") and self.config.get("FORMATTER_CONFIG", "").get("bos_token", ""):
+            if self.config.get("CUSTOM_CHAT_TEMPLATE", "") and self.config.get("FORMATTER_CONFIG", "").get("eos_token", "") and self.config.get("FORMATTER_CONFIG", "").get("bos_token", ""):
                 self.formatter = Jinja2ChatFormatter(
-                    template = self.config["CUSTOM_CHAT_FORMAT"],
+                    template = self.config["CUSTOM_CHAT_TEMPLATE"],
                     eos_token = self.config["FORMATTER_CONFIG"]["eos_token"],
                     bos_token = self.config["FORMATTER_CONFIG"]["bos_token"],
                 )
@@ -161,7 +159,7 @@ class ChatAgent:
 
         # 툴 함수들 선언
 
-        self.chroma_db_vector_store = ChromaDBVectorStore()
+        self.chroma_db_vector_store = ChromaDBVectorStore(self.config)
 
         if not self.config.get("RAG_CONFIG", {}):
             print("에러: RAG_CONFIG 딕셔너리가 없음")
@@ -189,9 +187,11 @@ class ChatAgent:
 
             return serialized, retrieved_docs
         
-        self.bio_chroma_db_vector_store = ChromaDBVectorStore()
+        # self.bio_chroma_db_vector_store = ChromaDBVectorStore(self.config)
+        self.bio_chroma_db_vector_store = None
 
-        self.bio_manager = BioManager()
+        # self.bio_manager = BioManager(self.config)
+        self.bio_manager = None
 
         self.tool_list = [retrieve, ]
 
@@ -202,14 +202,16 @@ class ChatAgent:
 
     # 세팅 함수
 
-    def load_chat_model_config():
+    def load_chat_model_config(self):
         model_module_name = SELECTED_CONFIG_FILE
 
-        if model_module_name.endswith('.py'):
-            model_module_name = model_module_name[:-3]
+        full_model_module_path = f"src.configs.{model_module_name}"
+
+        if full_model_module_path.endswith('.py'):
+            full_model_module_path = full_model_module_path[:-3]
 
         try:
-            module = importlib.import_module(model_module_name)
+            module = importlib.import_module(full_model_module_path)
         
             return getattr(module, "CONFIG", {})
 
@@ -248,6 +250,8 @@ class ChatAgent:
     def router(self, state: State):
         if state.get("branch_name") == "default":
             return "default"
+        elif state.get("branch_name") == "tools":
+            return "tools"
         else:
             return "default"
         
@@ -266,23 +270,46 @@ class ChatAgent:
 
         openai_formatted_trimmed_messages = convert_to_openai_messages(trimmed_messages)
 
-        full_prompt = self.formatter.format(
-            messages = openai_formatted_trimmed_messages,
-            date_string = datetime.now().strftime("%d %b %Y"),
-            add_generation_prompt = True,
-        )
+        # pprint(openai_formatted_trimmed_messages)
 
-        response_data = self.llm.create_completion(
-            prompt = full_prompt,
-            max_tokens = self.config["CHAT_MODEL_CONFIG"].get("max_tokens", 16),
-            temperature = self.config["CHAT_MODEL_CONFIG"].get("temperature", 0.8),
-            top_p = self.config["CHAT_MODEL_CONFIG"].get("top_p", 0.95),
-            min_p = self.config["CHAT_MODEL_CONFIG"].get("min_p", 0.05),
-            stop = self.config["CHAT_MODEL_CONFIG"].get("stop", []),
-            top_k = self.config["CHAT_MODEL_CONFIG"].get("top_k", 40),    
-        )
+        if self.formatter:            
+            full_prompt = self.formatter(
+                messages = openai_formatted_trimmed_messages,
+            ).prompt
+
+            # print(full_prompt)
+
+            response_data = self.llm.create_completion(
+                prompt = full_prompt,
+                max_tokens = self.config["CHAT_MODEL_CONFIG"].get("max_tokens", 16),
+                temperature = self.config["CHAT_MODEL_CONFIG"].get("temperature", 0.8),
+                top_p = self.config["CHAT_MODEL_CONFIG"].get("top_p", 0.95),
+                min_p = self.config["CHAT_MODEL_CONFIG"].get("min_p", 0.05),
+                stop = self.config["CHAT_MODEL_CONFIG"].get("stop", []),
+                top_k = self.config["CHAT_MODEL_CONFIG"].get("top_k", 40),    
+            )
+
+            # pprint(response_data)
+
+            text_output = response_data['choices'][0]['text'].strip()
+        else:
+            # print("formatter = None")
+
+            response_data = self.llm.create_chat_completion(
+                messages = openai_formatted_trimmed_messages,
+                max_tokens = self.config["CHAT_MODEL_CONFIG"].get("max_tokens", 16),
+                temperature = self.config["CHAT_MODEL_CONFIG"].get("temperature", 0.8),
+                top_p = self.config["CHAT_MODEL_CONFIG"].get("top_p", 0.95),
+                min_p = self.config["CHAT_MODEL_CONFIG"].get("min_p", 0.05),
+                stop = self.config["CHAT_MODEL_CONFIG"].get("stop", []),
+                top_k = self.config["CHAT_MODEL_CONFIG"].get("top_k", 40),  
+            )
+
+            # pprint(response_data)
+
+            text_output = response_data['choices'][0]['message']['content'].strip()
         
-        response = parse_llm_output(response_data)
+        response = parse_llm_output(text_output)
 
         add_messages = [state["query"]] + [response]
 
@@ -314,27 +341,50 @@ class ChatAgent:
 
         openai_formatted_tools = [convert_to_openai_tool(tool) for tool in self.tool_list]
 
-        full_prompt = self.formatter.format(
-            messages = openai_formatted_trimmed_messages,
-            custom_tools = openai_formatted_tools,
-            tools_in_user_message = False,
-            date_string = datetime.now().strftime("%d %b %Y"),
-            add_generation_prompt = True,
-        )
+        pprint(openai_formatted_trimmed_messages)
 
-        response_data = self.llm.create_completion(
-            prompt = full_prompt,
-            max_tokens = self.config["CHAT_MODEL_CONFIG"].get("max_tokens", 16),
-            temperature = self.config["CHAT_MODEL_CONFIG"].get("temperature", 0.8),
-            top_p = self.config["CHAT_MODEL_CONFIG"].get("top_p", 0.95),
-            min_p = self.config["CHAT_MODEL_CONFIG"].get("min_p", 0.05),
-            stop = self.config["CHAT_MODEL_CONFIG"].get("stop", []),
-            top_k = self.config["CHAT_MODEL_CONFIG"].get("top_k", 40),    
-        )
+        if self.formatter:            
+            full_prompt = self.formatter(
+                messages = openai_formatted_trimmed_messages,
+                tools = openai_formatted_tools,
+            ).prompt
+
+            print(full_prompt)
+
+            response_data = self.llm.create_completion(
+                prompt = full_prompt,
+                max_tokens = self.config["CHAT_MODEL_CONFIG"].get("max_tokens", 16),
+                temperature = self.config["CHAT_MODEL_CONFIG"].get("temperature", 0.8),
+                top_p = self.config["CHAT_MODEL_CONFIG"].get("top_p", 0.95),
+                min_p = self.config["CHAT_MODEL_CONFIG"].get("min_p", 0.05),
+                stop = self.config["CHAT_MODEL_CONFIG"].get("stop", []),
+                top_k = self.config["CHAT_MODEL_CONFIG"].get("top_k", 40),    
+            )
+
+            pprint(response_data)
+
+            text_output = response_data['choices'][0]['text'].strip()
+        else:
+            print("formatter = None")
+
+            response_data = self.llm.create_chat_completion(
+                messages = openai_formatted_trimmed_messages,
+                tools = openai_formatted_tools,
+                max_tokens = self.config["CHAT_MODEL_CONFIG"].get("max_tokens", 16),
+                temperature = self.config["CHAT_MODEL_CONFIG"].get("temperature", 0.8),
+                top_p = self.config["CHAT_MODEL_CONFIG"].get("top_p", 0.95),
+                min_p = self.config["CHAT_MODEL_CONFIG"].get("min_p", 0.05),
+                stop = self.config["CHAT_MODEL_CONFIG"].get("stop", []),
+                top_k = self.config["CHAT_MODEL_CONFIG"].get("top_k", 40),  
+            )
+
+            pprint(response_data)
+
+            text_output = response_data['choices'][0]['message']['content'].strip()
         
-        print("모델 답변: query_or_respond: " + repr(response_data))
-        response = parse_llm_output(response_data)
-        print("모델 답변 가공: query_or_respond: " + repr(response))
+        response = parse_llm_output(text_output)
+
+        pprint(response)
  
         if response.tool_calls:
             return {
@@ -346,15 +396,18 @@ class ChatAgent:
                 "query": state["query"],
                 "final_answer": None
             }
+        
+        add_messages = [state["query"]] + [response]
 
         return {
             "variables": state["variables"],
             "system_prompt": state["system_prompt"],
+            "history": add_messages,
             "branch_name": state["branch_name"],
             "messages": None,
             "tools_result": None,
             "query": state["query"],
-            "final_answer": None
+            "final_answer": response
         }
 
     def tools_check_for_tools(self, state: State):
@@ -389,29 +442,48 @@ class ChatAgent:
 
         openai_formatted_trimmed_messages = convert_to_openai_messages(trimmed_messages)
 
-        openai_formatted_tools = [convert_to_openai_tool(tool) for tool in self.tool_list]
+        pprint(openai_formatted_trimmed_messages)
 
-        full_prompt = self.formatter.format(
-            messages = openai_formatted_trimmed_messages,
-            custom_tools = openai_formatted_tools,
-            tools_in_user_message = False,
-            date_string = datetime.now().strftime("%d %b %Y"),
-            add_generation_prompt = True,
-        )
+        if self.formatter:
+            full_prompt = self.formatter(
+                messages = openai_formatted_trimmed_messages,
+            ).prompt
 
-        response_data = self.llm.create_completion(
-            prompt = full_prompt,
-            max_tokens = self.config["CHAT_MODEL_CONFIG"].get("max_tokens", 16),
-            temperature = self.config["CHAT_MODEL_CONFIG"].get("temperature", 0.8),
-            top_p = self.config["CHAT_MODEL_CONFIG"].get("top_p", 0.95),
-            min_p = self.config["CHAT_MODEL_CONFIG"].get("min_p", 0.05),
-            stop = self.config["CHAT_MODEL_CONFIG"].get("stop", []),
-            top_k = self.config["CHAT_MODEL_CONFIG"].get("top_k", 40),    
-        )
+            print(full_prompt)
+
+            response_data = self.llm.create_completion(
+                prompt = full_prompt,
+                max_tokens = self.config["CHAT_MODEL_CONFIG"].get("max_tokens", 16),
+                temperature = self.config["CHAT_MODEL_CONFIG"].get("temperature", 0.8),
+                top_p = self.config["CHAT_MODEL_CONFIG"].get("top_p", 0.95),
+                min_p = self.config["CHAT_MODEL_CONFIG"].get("min_p", 0.05),
+                stop = self.config["CHAT_MODEL_CONFIG"].get("stop", []),
+                top_k = self.config["CHAT_MODEL_CONFIG"].get("top_k", 40),    
+            )
+
+            pprint(response_data)
+
+            text_output = response_data['choices'][0]['text'].strip()
+        else:
+            print("formatter = None")
+
+            response_data = self.llm.create_chat_completion(
+                messages = openai_formatted_trimmed_messages,
+                max_tokens = self.config["CHAT_MODEL_CONFIG"].get("max_tokens", 16),
+                temperature = self.config["CHAT_MODEL_CONFIG"].get("temperature", 0.8),
+                top_p = self.config["CHAT_MODEL_CONFIG"].get("top_p", 0.95),
+                min_p = self.config["CHAT_MODEL_CONFIG"].get("min_p", 0.05),
+                stop = self.config["CHAT_MODEL_CONFIG"].get("stop", []),
+                top_k = self.config["CHAT_MODEL_CONFIG"].get("top_k", 40),  
+            )
+
+            pprint(response_data)
+
+            text_output = response_data['choices'][0]['message']['content'].strip()
         
-        print("모델 답변: query_or_respond: " + repr(response_data))
-        response = parse_llm_output(response_data)
-        print("모델 답변 가공: query_or_respond: " + repr(response))
+        response = parse_llm_output(text_output)
+
+        pprint(response)
 
         add_messages = [state["query"]] + state["messages"] + state["tools_result"] + [response]
 
@@ -611,7 +683,7 @@ class ChatAgent:
         # branch name: default
         workflow.add_edge("default_generate", END)
         # branch name: tools
-        workflow.add_conditional_edges("tools_query_or_respond", self.tools_check_for_tools, {"no_tool": "tools_generate", "tools": "tools_run_tools_and_pass_through_state"})
+        workflow.add_conditional_edges("tools_query_or_respond", self.tools_check_for_tools, {"no_tool": END, "tools": "tools_run_tools_and_pass_through_state"})
         workflow.add_edge("tools_run_tools_and_pass_through_state", "tools_generate")
         workflow.add_edge("tools_generate", END)
         # branch name: tools_bio

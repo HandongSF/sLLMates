@@ -14,7 +14,7 @@ DATA_DIR = BASE_DIR / "data"
 
 # 설정 파일 선택
 
-SELECTED_CONFIG_FILE = "Llama-3.1-8B_RAG_BIO.py"
+SELECTED_CONFIG_FILE = "Llama-3_1-8B_RAG_BIO.py"
 """Model 설정 파일
 
 config 폴더 안의 설정 파일 중 하나를 선택하여 적용

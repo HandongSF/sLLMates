@@ -4,7 +4,6 @@ from datetime import datetime
 from langchain.schema import HumanMessage, AIMessage
 
 from src.core.agent import ChatAgent
-from src.config import SYSTEM_PROMPT, VARIABLES
 from src.db.chat_metadata import (
     save_chat_metadata, update_chat_metadata, get_chat_list,
     delete_chat, rename_chat, get_chat_name, generate_chat_name_from_message
@@ -217,8 +216,9 @@ def create_simple_ui(agent: ChatAgent):
             # LangChain streaming
             for step in agent.app.stream(
                 {
-                    "variables": VARIABLES,
-                    "system_prompt": SYSTEM_PROMPT,
+                    "variables": agent.config.get("VARIABLES", {}),
+                    "system_prompt": agent.config.get("SYSTEM_PROMPT", ""),
+                    "branch_name": "tools", # 현재는 branch 이름을 수동으로 수정해서 사용할 branch를 변경해야 함
                     "messages": None,
                     "tools_result": None,
                     "query": input_messages,
@@ -889,9 +889,9 @@ def create_simple_ui(agent: ChatAgent):
         )
         
         # Bio 관련 초기 로드
-        interface.load(
-            lambda: (gr.update(choices=load_bio_list(), value=None), gr.update(choices=load_bio_list(), value=None)),
-            outputs=[bio_radio, bio_dropdown]
-        )
+        # interface.load(
+        #     lambda: (gr.update(choices=load_bio_list(), value=None), gr.update(choices=load_bio_list(), value=None)),
+        #     outputs=[bio_radio, bio_dropdown]
+        # )
 
     return interface
