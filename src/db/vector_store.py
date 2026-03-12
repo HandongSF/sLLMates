@@ -4,35 +4,34 @@ from langchain_community.document_loaders import TextLoader, DirectoryLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 
-from src.config import DATA_DIR, CHROMA_DB_PATH, BIO_CHROMA_DB_PATH, RAGConfig, EmbeddingConfig
+from src.config import DOCUMENTS_PATH, CHROMA_DB_PATH, BIO_CHROMA_DB_PATH
 
 class ChromaDBVectorStore:
 
     vector_store: Chroma
 
-    def __init__(self):
+    def __init__(self, config):
         if not os.path.exists(CHROMA_DB_PATH):
-            documents_path = os.path.join(DATA_DIR, "documents")
             loader = DirectoryLoader(
-                documents_path,
+                DOCUMENTS_PATH,
                 glob = "**/*.txt",
                 loader_cls = TextLoader,
                 loader_kwargs = {"encoding": "utf-8"}
             )
             docs = loader.load()
-            text_splitter = RecursiveCharacterTextSplitter(chunk_size = RAGConfig.chunk_size, chunk_overlap = RAGConfig.chunk_overlap)
+            text_splitter = RecursiveCharacterTextSplitter(chunk_size = config["RAG_CONFIG"].get("chunk_size", 200), chunk_overlap = config["RAG_CONFIG"].get("chunk_overlap", 50))
             all_splits = text_splitter.split_documents(docs)
 
             self.vector_store = Chroma(
                 persist_directory = CHROMA_DB_PATH,
                 embedding_function = HuggingFaceEmbeddings(
-                    model_name = EmbeddingConfig.model_name,
-                    model_kwargs = EmbeddingConfig.model_kwargs,
-                    encode_kwargs = EmbeddingConfig.encode_kwargs,
+                    model_name = config["EMBEDDING_MODEL_CONFIG"].get("model_name", ""),
+                    model_kwargs = config["EMBEDDING_MODEL_CONFIG"].get("model_kwargs", {'device': 'cuda'}),
+                    encode_kwargs = config["EMBEDDING_MODEL_CONFIG"].get("encode_kwargs", {'normalize_embeddings': True}),
                 )
             )
 
-            batch_size = RAGConfig.batch_size
+            batch_size = config["RAG_CONFIG"].get("batch_size", 16)
             for i in range(0, len(all_splits), batch_size):
                 batch = all_splits[i : i + batch_size]
                 self.vector_store.add_documents(batch)
@@ -41,9 +40,9 @@ class ChromaDBVectorStore:
             self.vector_store = Chroma(
                 persist_directory = CHROMA_DB_PATH,
                 embedding_function = HuggingFaceEmbeddings(
-                    model_name = EmbeddingConfig.model_name,
-                    model_kwargs = EmbeddingConfig.model_kwargs,
-                    encode_kwargs = EmbeddingConfig.encode_kwargs,
+                    model_name = config["EMBEDDING_MODEL_CONFIG"].get("model_name", ""),
+                    model_kwargs = config["EMBEDDING_MODEL_CONFIG"].get("model_kwargs", {'device': 'cuda'}),
+                    encode_kwargs = config["EMBEDDING_MODEL_CONFIG"].get("encode_kwargs", {'normalize_embeddings': True}),
                 )
             )
 

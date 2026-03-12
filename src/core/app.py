@@ -3,8 +3,7 @@ import uuid
 from datetime import datetime
 from langchain.schema import HumanMessage, AIMessage
 
-from src.core.agent import LangChainAgent
-from src.config import SYSTEM_PROMPT, VARIABLES
+from src.core.agent import ChatAgent
 from src.db.chat_metadata import (
     save_chat_metadata, update_chat_metadata, get_chat_list,
     delete_chat, rename_chat, get_chat_name, generate_chat_name_from_message
@@ -14,71 +13,71 @@ from src.db.bio_metadata import (
 )
 
 
-agent = LangChainAgent()
+# agent = ChatAgent()
 
 
-# UI Helper Functions
-def create_chatbot_response(message, history, thread_id):
-    if thread_id and len(history) == 1 and "새 채팅이 시작되었습니다" in (history[0][1] or ""):
-        auto_name = generate_chat_name_from_message(message)
-        rename_chat(thread_id, auto_name)
+# # UI Helper Functions
+# def create_chatbot_response(message, history, thread_id):
+#     if thread_id and len(history) == 1 and "새 채팅이 시작되었습니다" in (history[0][1] or ""):
+#         auto_name = generate_chat_name_from_message(message)
+#         rename_chat(thread_id, auto_name)
 
-    if not thread_id:
-        history.append([message, "⚠️ '새 채팅'을 눌러 대화를 시작해주세요."])
-        yield history, ""
-        return
+#     if not thread_id:
+#         history.append([message, "⚠️ '새 채팅'을 눌러 대화를 시작해주세요."])
+#         yield history, ""
+#         return
 
-    if not message.strip():
-        yield history, ""
-        return
+#     if not message.strip():
+#         yield history, ""
+#         return
 
-    if message.lower().strip() in ["exit", "q", "끝"]:
-        history.append([message, "대화를 종료합니다."])
-        yield history, ""
-        return
+#     if message.lower().strip() in ["exit", "q", "끝"]:
+#         history.append([message, "대화를 종료합니다."])
+#         yield history, ""
+#         return
 
-    # 초기 표시
-    history.append([message, "💭 생각 중..."])
-    yield history, ""
+#     # 초기 표시
+#     history.append([message, "💭 생각 중..."])
+#     yield history, ""
 
-    config = {"configurable": {"thread_id": thread_id}}
+#     config = {"configurable": {"thread_id": thread_id}}
 
-    try:
-        input_messages = HumanMessage(content=message)
-        partial_response = ""
+#     try:
+#         input_messages = HumanMessage(content=message)
+#         partial_response = ""
 
-        # LangChain streaming
-        for step in agent.app.stream(
-            {
-                "variables": VARIABLES,
-                "system_prompt": SYSTEM_PROMPT,
-                "messages": None,
-                "tools_result": None,
-                "query": input_messages,
-                "final_answer": None
-            },
-            config=config,
-            stream_mode="values",
-        ):
-            if "final_answer" in step and step["final_answer"]:
-                text_piece = (
-                    step["final_answer"].content
-                    if hasattr(step["final_answer"], "content")
-                    else str(step["final_answer"])
-                )
+#         # LangChain streaming
+#         for step in agent.app.stream(
+#             {
+#                 "variables": VARIABLES,
+#                 "system_prompt": SYSTEM_PROMPT,
+#                 "messages": None,
+#                 "tools_result": None,
+#                 "query": input_messages,
+#                 "final_answer": None
+#             },
+#             config=config,
+#             stream_mode="values",
+#         ):
+#             if "final_answer" in step and step["final_answer"]:
+#                 text_piece = (
+#                     step["final_answer"].content
+#                     if hasattr(step["final_answer"], "content")
+#                     else str(step["final_answer"])
+#                 )
 
-                # 🔤 한 글자씩 표시
-                for ch in text_piece:
-                    partial_response += ch
-                    history[-1][1] = partial_response
-                    yield history, ""
+#                 # 🔤 한 글자씩 표시
+#                 for ch in text_piece:
+#                     partial_response += ch
+#                     history[-1][1] = partial_response
+#                     yield history, ""
 
-        update_chat_metadata(thread_id)
+#         update_chat_metadata(thread_id)
 
-    except Exception as e:
-        print(f"응답 생성 오류: {e}")
-        history[-1][1] = f"❌ 오류가 발생했습니다: {str(e)}"
-        yield history, ""
+#     except Exception as e:
+#         print(f"응답 생성 오류: {e}")
+#         history[-1][1] = f"❌ 오류가 발생했습니다: {str(e)}"
+#         yield history, ""
 
 #LangGraph state를 Gradio Chatbot 형식으로 변환
 def format_history_for_chatbot(thread_data):
@@ -182,7 +181,72 @@ def load_bio_for_edit(bio_id):
         return "", ""
 
 # Gradio UI 
-def create_simple_ui():
+def create_simple_ui(agent: ChatAgent):
+
+    # UI Helper Functions
+    def create_chatbot_response(message, history, thread_id):
+        if thread_id and len(history) == 1 and "새 채팅이 시작되었습니다" in (history[0][1] or ""):
+            auto_name = generate_chat_name_from_message(message)
+            rename_chat(thread_id, auto_name)
+    
+        if not thread_id:
+            history.append([message, "⚠️ '새 채팅'을 눌러 대화를 시작해주세요."])
+            yield history, ""
+            return
+    
+        if not message.strip():
+            yield history, ""
+            return
+    
+        if message.lower().strip() in ["exit", "q", "끝"]:
+            history.append([message, "대화를 종료합니다."])
+            yield history, ""
+            return
+    
+        # 초기 표시
+        history.append([message, "💭 생각 중..."])
+        yield history, ""
+    
+        config = {"configurable": {"thread_id": thread_id}}
+    
+        try:
+            input_messages = HumanMessage(content=message)
+            partial_response = ""
+    
+            # LangChain streaming
+            for step in agent.app.stream(
+                {
+                    "variables": agent.config.get("VARIABLES", {}),
+                    "system_prompt": agent.config.get("SYSTEM_PROMPT", ""),
+                    "branch_name": "tools", # 현재는 branch 이름을 수동으로 수정해서 사용할 branch를 변경해야 함
+                    "messages": None,
+                    "tools_result": None,
+                    "query": input_messages,
+                    "final_answer": None
+                },
+                config=config,
+                stream_mode="values",
+            ):
+                if "final_answer" in step and step["final_answer"]:
+                    text_piece = (
+                        step["final_answer"].content
+                        if hasattr(step["final_answer"], "content")
+                        else str(step["final_answer"])
+                    )
+    
+                    # 🔤 한 글자씩 표시
+                    for ch in text_piece:
+                        partial_response += ch
+                        history[-1][1] = partial_response
+                        yield history, ""
+    
+            update_chat_metadata(thread_id)
+    
+        except Exception as e:
+            print(f"응답 생성 오류: {e}")
+            history[-1][1] = f"❌ 오류가 발생했습니다: {str(e)}"
+            yield history, ""
+
     css = """
     .gradio-container {  
         min-height: 80vh;
@@ -825,9 +889,9 @@ def create_simple_ui():
         )
         
         # Bio 관련 초기 로드
-        interface.load(
-            lambda: (gr.update(choices=load_bio_list(), value=None), gr.update(choices=load_bio_list(), value=None)),
-            outputs=[bio_radio, bio_dropdown]
-        )
+        # interface.load(
+        #     lambda: (gr.update(choices=load_bio_list(), value=None), gr.update(choices=load_bio_list(), value=None)),
+        #     outputs=[bio_radio, bio_dropdown]
+        # )
 
     return interface
