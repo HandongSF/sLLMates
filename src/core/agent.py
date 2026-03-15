@@ -27,7 +27,7 @@ from langchain_community.chat_models import ChatLlamaCpp
 from src.config import SELECTED_CONFIG_FILE, SQLITE_DB_FILE
 from src.db.vector_store import ChromaDBVectorStore
 from src.db.bio_metadata import search_similar_bios, save_or_update_bio
-from src.core.parsers import parse_llm_output
+from src.core.parsers import parse_llm_output, convert_messages_to_llama3_messages
 from src.core.bio_manager import BioManager
 
 
@@ -440,7 +440,7 @@ class ChatAgent:
 
         trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + state["tools_result"] + [state["query"]])
 
-        openai_formatted_trimmed_messages = convert_to_openai_messages(trimmed_messages)
+        openai_formatted_trimmed_messages = convert_messages_to_llama3_messages(trimmed_messages)
 
         pprint(openai_formatted_trimmed_messages)
 
