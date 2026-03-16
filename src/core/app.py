@@ -152,7 +152,7 @@ def create_simple_ui(agent: ChatAgent):
             if importance_val and not (1 <= importance_val <= 10):
                 return gr.update(choices=load_bio_list()), "⚠️ 중요도는 1-10 사이여야 합니다", gr.update(choices=get_bio_choices())
             
-            update_bio(bio_id, text=new_text.strip(), importance=importance_val)
+            bio_metadata.update_bio(bio_id, text=new_text.strip(), importance=importance_val)
             return gr.update(choices=load_bio_list()), f"✅ Bio 업데이트 완료", gr.update(choices=get_bio_choices())
         except Exception as e:
             print(f"Bio 업데이트 오류: {e}")
@@ -164,7 +164,7 @@ def create_simple_ui(agent: ChatAgent):
             return gr.update(choices=load_bio_list()), "⚠️ Bio를 선택하세요", gr.update(choices=get_bio_choices()), None, "", ""
         
         try:
-            delete_bio(bio_id)
+            bio_metadata.delete_bio(bio_id)
             return gr.update(choices=load_bio_list()), "✅ Bio 삭제 완료", gr.update(choices=get_bio_choices()), None, "", ""
         except Exception as e:
             print(f"Bio 삭제 오류: {e}")
@@ -176,7 +176,7 @@ def create_simple_ui(agent: ChatAgent):
             return "", ""
         
         try:
-            bio = get_bio_by_id(bio_id)
+            bio = bio_metadata.get_bio_by_id(bio_id)
             if bio:
                 return bio["document"], str(bio["importance"])
             return "", ""
@@ -248,7 +248,7 @@ def create_simple_ui(agent: ChatAgent):
 
     
                     # 🔤 한 글자씩 표시
-                    for ch in text_piece:
+                    for ch in display_text:
                         partial_response += ch
                         history[-1][1] = partial_response
                         yield history, ""
