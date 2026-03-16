@@ -121,3 +121,32 @@ def convert_messages_to_llama3_messages(
             })
 
     return converted
+
+def parse_bio_with_importance(text: str) -> List[Dict[str, any]]:
+        bio_blocks = re.findall(r"<bio>(.*?)</bio>", text, flags=re.DOTALL)
+        
+        bio_list = []
+        for block in bio_blocks:
+            content_match = re.search(r"content:\s*(.*)", block)
+            importance_match = re.search(r"importance:\s*(\d+)", block)
+            is_core_match = re.search(r"is_core:\s*(true|false)", block, re.IGNORECASE)
+            
+            if not content_match:
+                continue
+                
+            content = content_match.group(1).strip()
+            
+            # importance 파싱 및 제한 (기본값 5)
+            raw_importance = int(importance_match.group(1)) if importance_match else 5
+            importance_value = max(1, min(raw_importance, 10))
+            
+            # is_core 파싱 (기본값 False)
+            is_core = is_core_match.group(1).lower() == "true" if is_core_match else False
+            
+            bio_list.append({
+                "content": content,
+                "importance": importance_value,
+                "is_core": is_core
+            })
+            
+        return bio_list

@@ -45,6 +45,9 @@ class ChromaDBVectorStore:
                     encode_kwargs = config["EMBEDDING_MODEL_CONFIG"].get("encode_kwargs", {'normalize_embeddings': True}),
                 )
             )
+        print(f"[ChromaDBVectorStore] 초기화 완료. 총 문서 수: {self.vector_store._collection.count()}")
+        print(f"[ChromaDBVectorStore] 컬렉션 이름: {self.vector_store._collection.name}")
+        print(f"[ChromaDBVectorStore] 임베딩 모델: {config['EMBEDDING_MODEL_CONFIG'].get('model_name', '')}")    
 
 
 class BioChromaDBVectorStore:
@@ -52,15 +55,15 @@ class BioChromaDBVectorStore:
     vector_store: Chroma
     collection_name: str = "bio_memory"
 
-    def __init__(self):
+    def __init__(self, config):
         self.vector_store = Chroma(
             collection_name=self.collection_name,
             persist_directory = BIO_CHROMA_DB_PATH,
             embedding_function = HuggingFaceEmbeddings(
-                    model_name = EmbeddingConfig.model_name,
-                    model_kwargs = EmbeddingConfig.model_kwargs,
-                    encode_kwargs = EmbeddingConfig.encode_kwargs,
-                ) 
+                    model_name = config["EMBEDDING_MODEL_CONFIG"].get("model_name", ""),
+                    model_kwargs = config["EMBEDDING_MODEL_CONFIG"].get("model_kwargs", {'device': 'cuda'}),
+                    encode_kwargs = config["EMBEDDING_MODEL_CONFIG"].get("encode_kwargs", {'normalize_embeddings': True}),
+            )
         )
 
     def embed_text(self, text: str):

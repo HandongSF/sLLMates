@@ -5,7 +5,8 @@ from pathlib import Path
 BASE_DIR = Path(__file__).parent.parent.resolve()
 """base directory path"""
 
-MODELS_DIR = BASE_DIR / "models"
+MODELS_DIR = Path(__file__).parent.parent.parent.resolve() / "sLLMates" / "models"
+#MODELS_DIR = BASE_DIR / "models"
 """Model directory path"""
 
 DATA_DIR = BASE_DIR / "data"

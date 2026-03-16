@@ -28,10 +28,9 @@ from langchain_core.messages import trim_messages
 from langchain_community.chat_models import ChatLlamaCpp
 
 from src.config import SELECTED_CONFIG_FILE, SQLITE_DB_FILE
-from src.db.vector_store import ChromaDBVectorStore
-from src.db.bio_metadata import search_similar_bios, save_or_update_bio
-from src.core.parsers import parse_llm_output, convert_messages_to_llama3_messages
-from src.core.bio_manager import BioManager
+from src.db.vector_store import ChromaDBVectorStore, BioChromaDBVectorStore
+from src.db.bio_metadata import BioMetadata
+from src.core.parsers import parse_llm_output, convert_messages_to_llama3_messages, parse_bio_with_importance
 
 
 langchain.debug = True
@@ -99,8 +98,7 @@ class ChatAgent:
 
     bio_chroma_db_vector_store: any
 
-    bio_manager: BioManager
-    """bio memory 추출 및 중요도 판단 로직"""
+    bio_metadata: any
 
     tool_list: any
 
@@ -202,15 +200,13 @@ class ChatAgent:
 
             return serialized, retrieved_docs
         
-        # self.bio_chroma_db_vector_store = ChromaDBVectorStore(self.config)
-        self.bio_chroma_db_vector_store = None
-
-        # self.bio_manager = BioManager(self.config)
-        self.bio_manager = None
-
         self.tool_list = [retrieve, ]
 
         self.tools = ToolNode(self.tool_list)
+
+        self.bio_chroma_db_vector_store = BioChromaDBVectorStore(self.config)
+
+        self.bio_metadata = BioMetadata(self.bio_chroma_db_vector_store)
 
         # app 선언
         self.app = self.create_workflow()
@@ -744,49 +740,149 @@ class ChatAgent:
         }
 
     # branch name: 
+    # branch name: bio
 
-    # def retrieve_bio_memory(self, state: State):
-    #     bio_dict = search_similar_bios(state["query"].content, 5)
+    def retrieve_bio_memory(self, state: State):
+        bio_dict = self.bio_metadata.search_similar_bios(state["query"].content, 5)
 
-    #     bio_result = BIO_EXPLANATION_PROMPT
+        bio_result = self.config["BIO_EXPLANATION_PROMPT"]
 
-    #     if bio_dict:
-    #         for bio in bio_dict[:10]:
-    #             bio_result += f"-{bio["document"]}\n"
-    #     else:
-    #         bio_result = ""
+        if bio_dict:
+            for bio in bio_dict[:10]:
+                bio_result += f"-{bio["document"]}\n"
+        else:
+            bio_result = ""
 
-    #     return {
-    #         "bio_result":bio_result
-    #     }
+        return {
+            "bio_result":bio_result
+        }
 
-    # def extract_and_save_bio_memory(self, state:State):
-    #     start = time.time()
-    #     bio_prompt = BIO_PROMPT
-    #     trimmed_messages = self.trimmer.invoke([SystemMessage(bio_prompt)] + [state["query"]])
+    def bio_generate(self, state: State):
+        filled_system_prompt = state["system_prompt"].format(**state["variables"]) + state["bio_result"]
 
-    #     response_data = self.llm.create_completion(
-    #         prompt = convert_messages_to_text_format_llama3(trimmed_messages),
-    #         max_tokens = LLMConfig.max_tokens,
-    #         temperature = LLMConfig.temperature,
-    #         top_p = LLMConfig.top_p,
-    #         min_p = LLMConfig.model_kwargs["min_p"],
-    #         stop = LLMConfig.stop,
-    #         top_k = LLMConfig.top_k,      
-    #     )
-    #     response = parse_llm_output(response_data)
-    #     print("extract_and_save_bio_memory 결과: " + repr(response))
+        conversation_messages = [
+            message
+            for message in state["history"]
+            if message.type in ("human") or (message.type == "ai" and not message.tool_calls)
+        ]
+
+        trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + [state["query"]])
+
+        openai_formatted_trimmed_messages = convert_to_openai_messages(trimmed_messages)
+
+        # pprint(openai_formatted_trimmed_messages)
+
+        if self.formatter:            
+            full_prompt = self.formatter(
+                messages = openai_formatted_trimmed_messages,
+            ).prompt
+
+            print(full_prompt)
+
+            response_data = self.llm.create_completion(
+                prompt = full_prompt,
+                max_tokens = self.config["CHAT_MODEL_CONFIG"].get("max_tokens", 16),
+                temperature = self.config["CHAT_MODEL_CONFIG"].get("temperature", 0.8),
+                top_p = self.config["CHAT_MODEL_CONFIG"].get("top_p", 0.95),
+                min_p = self.config["CHAT_MODEL_CONFIG"].get("min_p", 0.05),
+                stop = self.config["CHAT_MODEL_CONFIG"].get("stop", []),
+                top_k = self.config["CHAT_MODEL_CONFIG"].get("top_k", 40),    
+            )
+
+            pprint(response_data)
+
+            text_output = response_data['choices'][0]['text'].strip()
+        else:
+            # print("formatter = None")
+
+            response_data = self.llm.create_chat_completion(
+                messages = openai_formatted_trimmed_messages,
+                max_tokens = self.config["CHAT_MODEL_CONFIG"].get("max_tokens", 16),
+                temperature = self.config["CHAT_MODEL_CONFIG"].get("temperature", 0.8),
+                top_p = self.config["CHAT_MODEL_CONFIG"].get("top_p", 0.95),
+                min_p = self.config["CHAT_MODEL_CONFIG"].get("min_p", 0.05),
+                stop = self.config["CHAT_MODEL_CONFIG"].get("stop", []),
+                top_k = self.config["CHAT_MODEL_CONFIG"].get("top_k", 40),  
+            )
+
+            pprint(response_data)
+
+            text_output = response_data['choices'][0]['message']['content'].strip()
         
-    #     if response:
-    #         bio_list = self.bio_manager.extract_bio_with_importance(response.content)
-    #         if bio_list:
-    #             save_or_update_bio(bio_list)
-    #         #state["final_answer"].content = self.bio_manager.clean_bio_tags(state["final_answer"].content)
-    #     end = time.time()
+        response = parse_llm_output(text_output)
+        print("bio_generate 결과: " + repr(response))
 
-    #     print(f"extract_and_save_bio_memory 실행 시간: {end - start:.5f}초")
+        add_messages = [state["query"]] + [response]
 
-    #     return 
+        return {
+            "variables": state["variables"],
+            "system_prompt": state["system_prompt"],
+            "history": add_messages,
+            "branch_name": state["branch_name"],
+            "messages": None,
+            "tools_result": None,
+            "query": state["query"],
+            "final_answer": response
+        }
+
+    def extract_and_save_bio_memory(self, state:State):
+        start = time.time()
+        bio_extraction_prompt = self.config["BIO_EXTRACTION_PROMPT"]
+        trimmed_messages = self.trimmer.invoke([SystemMessage(bio_extraction_prompt)] + [state["query"]])
+
+        openai_formatted_trimmed_messages = convert_to_openai_messages(trimmed_messages)
+
+        # pprint(openai_formatted_trimmed_messages)
+
+        if self.formatter:            
+            full_prompt = self.formatter(
+                messages = openai_formatted_trimmed_messages,
+            ).prompt
+
+            print(full_prompt)
+
+            response_data = self.llm.create_completion(
+                prompt = full_prompt,
+                max_tokens = self.config["CHAT_MODEL_CONFIG"].get("max_tokens", 16),
+                temperature = self.config["CHAT_MODEL_CONFIG"].get("temperature", 0.8),
+                top_p = self.config["CHAT_MODEL_CONFIG"].get("top_p", 0.95),
+                min_p = self.config["CHAT_MODEL_CONFIG"].get("min_p", 0.05),
+                stop = self.config["CHAT_MODEL_CONFIG"].get("stop", []),
+                top_k = self.config["CHAT_MODEL_CONFIG"].get("top_k", 40),    
+            )
+
+            pprint(response_data)
+
+            text_output = response_data['choices'][0]['text'].strip()
+        else:
+            # print("formatter = None")
+
+            response_data = self.llm.create_chat_completion(
+                messages = openai_formatted_trimmed_messages,
+                max_tokens = self.config["CHAT_MODEL_CONFIG"].get("max_tokens", 16),
+                temperature = self.config["CHAT_MODEL_CONFIG"].get("temperature", 0.8),
+                top_p = self.config["CHAT_MODEL_CONFIG"].get("top_p", 0.95),
+                min_p = self.config["CHAT_MODEL_CONFIG"].get("min_p", 0.05),
+                stop = self.config["CHAT_MODEL_CONFIG"].get("stop", []),
+                top_k = self.config["CHAT_MODEL_CONFIG"].get("top_k", 40),  
+            )
+
+            pprint(response_data)
+
+            text_output = response_data['choices'][0]['message']['content'].strip()
+        
+        response = parse_llm_output(text_output)
+        print("extract_and_save_bio_memory 결과: " + repr(response))
+        
+        if response:
+            bio_list = parse_bio_with_importance(response.content)
+            if bio_list:
+                self.bio_metadata.save_or_update_bio(bio_list)
+        end = time.time()
+
+        print(f"extract_and_save_bio_memory 실행 시간: {end - start:.5f}초")
+
+        return 
 
     # def query_or_respond(self, state: State):
     #     filled_system_prompt = TOOL_PROMPT.format(**state["variables"])
@@ -922,6 +1018,11 @@ class ChatAgent:
         workflow.add_node("classifier_run_tools_and_pass_through_state", self.classifier_run_tools_and_pass_through_state)
         workflow.add_node("classifier_generate", self.classifier_generate)
         # branch name: 
+        # branch name: bio
+        workflow.add_node("bio_generate", self.bio_generate)
+        workflow.add_node("retrieve_bio_memory", self.retrieve_bio_memory)
+        workflow.add_node("extract_and_save_bio_memory", self.extract_and_save_bio_memory)
+        
         # workflow.add_node("retrieve_bio_memory", retrieve_bio_memory)
         # workflow.add_node("query_or_respond", query_or_respond)
         # workflow.add_node("run_tools_and_pass_through_state", run_tools_and_pass_through_state)
@@ -930,19 +1031,30 @@ class ChatAgent:
 
         # 노드 연결
         # 시작
-        workflow.add_conditional_edges(START, self.router, {"default": "default_generate", "tools": "tools_query_or_respond", "classifier": "classifier_check_thinking"})
+        workflow.add_conditional_edges(START, self.router, {"default": "default_generate", "tools": "tools_query_or_respond", "classifier": "classifier_check_thinking", "bio": "retrieve_bio_memory"})
         # branch name: default
         workflow.add_edge("default_generate", END)
+        
         # branch name: tools
         workflow.add_conditional_edges("tools_query_or_respond", self.tools_check_for_tools, {"no_tool": END, "tools": "tools_run_tools_and_pass_through_state"})
         workflow.add_edge("tools_run_tools_and_pass_through_state", "tools_generate")
         workflow.add_edge("tools_generate", END)
+        
         # branch name: classifier
         workflow.add_edge("classifier_check_thinking", "classifier_query_or_respond")
         workflow.add_conditional_edges("classifier_query_or_respond", self.classifier_check_for_tools, {"no_tool": END, "tools": "classifier_run_tools_and_pass_through_state"})
         workflow.add_edge("classifier_run_tools_and_pass_through_state", "classifier_generate")
         workflow.add_edge("classifier_generate", END)
-        # branch name: tools_bio
+        
+        # branch name: tools
+        # workflow.add_conditional_edges("tools_query_or_respond", self.tools_check_for_tools, {"no_tool": END, "tools": "tools_run_tools_and_pass_through_state"})
+        # workflow.add_edge("tools_run_tools_and_pass_through_state", "tools_generate")
+        # workflow.add_edge("tools_generate", END)
+        
+        # branch name: bio
+        workflow.add_edge("retrieve_bio_memory", "bio_generate")
+        workflow.add_edge("bio_generate", "extract_and_save_bio_memory")
+        workflow.add_edge("extract_and_save_bio_memory", END)
         # workflow.add_edge("retrieve_bio_memory", "query_or_respond")
         # workflow.add_conditional_edges("query_or_respond", self.check_for_tools, {"no_tool": "generate", "tools": "run_tools_and_pass_through_state"})
         # workflow.add_edge("run_tools_and_pass_through_state", "generate")
