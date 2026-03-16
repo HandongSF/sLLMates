@@ -51,6 +51,12 @@ CONFIG = {
         "start_on": "human",
     },
 
+    # 분류 모델 설정
+
+    "CLASSIFIER_MODEL_CONFIG": {
+        "model_path": str(MODELS_DIR / "finetuned_classifier_model_new_non"),
+    },
+
     # RAG 설정
 
     "RAG_CONFIG": {
@@ -67,7 +73,7 @@ CONFIG = {
     },
 
     "SYSTEM_PROMPT": """
-    You are Qwen3, a large language model trained by Alibaba, based on the Qwen architecture. You are chatting with the user via the Chating app. Never use emojis unless explicitly asked to. When you receive a tool call response, use the output to format an answer to the orginal user question. The response language is {language}.
+    You are a helpful assistant. The response language is {language}.
     """,
 
     "BIO_PROMPT": """
