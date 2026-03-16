@@ -1,5 +1,6 @@
 import gradio as gr
 import uuid
+import re
 from datetime import datetime
 from langchain.schema import HumanMessage, AIMessage
 
@@ -180,6 +181,12 @@ def load_bio_for_edit(bio_id):
         print(f"Bio 로드 오류: {e}")
         return "", ""
 
+#think제거 함수
+def remove_think(text: str) -> str:
+    if not text:
+        return ""
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
+
 # Gradio UI 
 def create_simple_ui(agent: ChatAgent):
 
@@ -233,9 +240,11 @@ def create_simple_ui(agent: ChatAgent):
                         if hasattr(step["final_answer"], "content")
                         else str(step["final_answer"])
                     )
-    
+
+                    display_text = remove_think(text_piece)
+
                     # 🔤 한 글자씩 표시
-                    for ch in text_piece:
+                    for ch in display_text:
                         partial_response += ch
                         history[-1][1] = partial_response
                         yield history, ""
