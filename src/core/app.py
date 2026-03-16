@@ -185,7 +185,10 @@ def load_bio_for_edit(bio_id):
 def remove_think(text: str) -> str:
     if not text:
         return ""
-    return re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
+
+    remove_think_text = re.sub(r"<think>.*?</think>", "", text, flags=re.S)
+
+    return remove_think_text.strip()
 
 # Gradio UI 
 def create_simple_ui(agent: ChatAgent):
