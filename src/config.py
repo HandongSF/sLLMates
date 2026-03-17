@@ -33,6 +33,3 @@ CHROMA_DB_PATH = str(DATA_DIR / "db" / "chroma_db")
 
 SQLITE_DB_FILE = str(DATA_DIR / "db" / "chat_db" / "threads.sqlite")
 """Sqlite db path"""
-
-BIO_CHROMA_DB_PATH = str(DATA_DIR / "db" / "bio_chroma_db")
-"""Bio Chroma db path"""

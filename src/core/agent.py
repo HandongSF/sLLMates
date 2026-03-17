@@ -6,7 +6,6 @@ from datetime import datetime
 import importlib
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
-import numpy as np
 from typing import Sequence, Dict, List, Optional
 from typing import Annotated
 from typing_extensions import Annotated, TypedDict
@@ -28,7 +27,7 @@ from langchain_core.messages import trim_messages
 from langchain_community.chat_models import ChatLlamaCpp
 
 from src.config import SELECTED_CONFIG_FILE, SQLITE_DB_FILE
-from src.db.vector_store import ChromaDBVectorStore, BioChromaDBVectorStore
+from src.db.vector_store import ChromaDBManager
 from src.db.bio_metadata import BioMetadata
 from src.core.parsers import parse_llm_output, convert_messages_to_llama3_messages, parse_bio_with_importance
 
@@ -94,9 +93,7 @@ class ChatAgent:
 
     classifier_llm: any
 
-    chroma_db_vector_store: any
-
-    bio_chroma_db_vector_store: any
+    chroma_db_manager: any
 
     bio_metadata: any
 
@@ -172,7 +169,7 @@ class ChatAgent:
 
         # 툴 함수들 선언
 
-        self.chroma_db_vector_store = ChromaDBVectorStore(self.config)
+        self.chroma_db_manager = ChromaDBManager(self.config)
 
         if not self.config.get("RAG_CONFIG", {}):
             print("에러: RAG_CONFIG 딕셔너리가 없음")
@@ -188,7 +185,7 @@ class ChatAgent:
             if query == "__NONE__":
                 return "No results found.", []
 
-            retrieved_docs = self.chroma_db_vector_store.vector_store.similarity_search(query, k = self.config["RAG_CONFIG"].get("retrieval_k", 5))
+            retrieved_docs = self.chroma_db_manager.get_doc_store().similarity_search(query, k = self.config["RAG_CONFIG"].get("retrieval_k", 5))
 
             if not retrieved_docs:
                 return "No results found.", []
@@ -204,9 +201,7 @@ class ChatAgent:
 
         self.tools = ToolNode(self.tool_list)
 
-        self.bio_chroma_db_vector_store = BioChromaDBVectorStore(self.config)
-
-        self.bio_metadata = BioMetadata(self.bio_chroma_db_vector_store)
+        self.bio_metadata = BioMetadata(self.chroma_db_manager.get_bio_store())
 
         # app 선언
         self.app = self.create_workflow()
