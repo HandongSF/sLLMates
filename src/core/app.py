@@ -378,6 +378,10 @@ def create_simple_ui(agent: ChatAgent):
         box-shadow: inset 0 0 0 1px var(--border-color-primary) !important;
         margin: 12px; /* 채팅창 주위 여백 */
     }
+
+    #message-row {
+        margin: 0 12px;
+    }
     
     /* 슬라이더 */
     input[type="range"] {
