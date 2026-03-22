@@ -737,7 +737,7 @@ class ChatAgent:
     # branch name: 
     # branch name: bio
 
-    def retrieve_bio_memory(self, state: State, top_k: int = 5, threshold: float = 1.1):
+    def bio_retrieve_bio_memory(self, state: State, top_k: int = 5, threshold: float = 1.1):
 
         retrieved_bio = self.bio_metadata.get_bio_chroma_collection()._collection.query(
             query_texts = [state["query"].content],
@@ -838,7 +838,7 @@ class ChatAgent:
             "final_answer": response
         }
 
-    def extract_and_save_bio_memory(self, state:State):
+    def bio_extract_and_save_bio_memory(self, state:State):
         start = time.time()
         bio_extraction_prompt = self.config["BIO_EXTRACTION_PROMPT"]
         trimmed_messages = self.trimmer.invoke([SystemMessage(bio_extraction_prompt)] + [state["query"]])
@@ -1033,8 +1033,8 @@ class ChatAgent:
         # branch name: 
         # branch name: bio
         workflow.add_node("bio_generate", self.bio_generate)
-        workflow.add_node("retrieve_bio_memory", self.retrieve_bio_memory)
-        workflow.add_node("extract_and_save_bio_memory", self.extract_and_save_bio_memory)
+        workflow.add_node("bio_retrieve_bio_memory", self.bio_retrieve_bio_memory)
+        workflow.add_node("bio_extract_and_save_bio_memory", self.bio_extract_and_save_bio_memory)
         
         # workflow.add_node("retrieve_bio_memory", retrieve_bio_memory)
         # workflow.add_node("query_or_respond", query_or_respond)
@@ -1065,9 +1065,9 @@ class ChatAgent:
         # workflow.add_edge("tools_generate", END)
         
         # branch name: bio
-        workflow.add_edge("retrieve_bio_memory", "bio_generate")
-        workflow.add_edge("bio_generate", "extract_and_save_bio_memory")
-        workflow.add_edge("extract_and_save_bio_memory", END)
+        workflow.add_edge("bio_retrieve_bio_memory", "bio_generate")
+        workflow.add_edge("bio_generate", "bio_extract_and_save_bio_memory")
+        workflow.add_edge("bio_extract_and_save_bio_memory", END)
         # workflow.add_edge("retrieve_bio_memory", "query_or_respond")
         # workflow.add_conditional_edges("query_or_respond", self.check_for_tools, {"no_tool": "generate", "tools": "run_tools_and_pass_through_state"})
         # workflow.add_edge("run_tools_and_pass_through_state", "generate")
