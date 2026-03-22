@@ -737,19 +737,37 @@ class ChatAgent:
     # branch name: 
     # branch name: bio
 
-    def retrieve_bio_memory(self, state: State):
-        bio_dict = self.bio_metadata.search_similar_bios(state["query"].content, 5)
+    def retrieve_bio_memory(self, state: State, top_k: int = 5, threshold: float = 1.1):
+
+        retrieved_bio = self.bio_metadata.get_bio_chroma_collection()._collection.query(
+            query_texts = [state["query"].content],
+            n_results = top_k,
+            include = ["documents", "metadatas", "distances"]
+        )
 
         bio_result = self.config["BIO_EXPLANATION_PROMPT"]
+        bio_dict = []
+
+        if not retrieved_bio['documents'] or not retrieved_bio['documents'][0]:
+            return {"bio_result": ""}
+
+        for i in range(len(retrieved_bio['documents'][0])):
+            distance = retrieved_bio['distances'][0][i]
+            content = retrieved_bio['documents'][0][i]
+
+            if distance <= threshold:
+                bio_dict.append({
+                    "document": content,
+                })
 
         if bio_dict:
-            for bio in bio_dict[:10]:
-                bio_result += f"-{bio["document"]}\n"
+            for bio in bio_dict:
+                bio_result += f"-{bio['document']}\n"
         else:
             bio_result = ""
 
         return {
-            "bio_result":bio_result
+            "bio_result": bio_result
         }
 
     def bio_generate(self, state: State):
