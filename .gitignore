@@ -6,8 +6,6 @@
 !/data/db/chat_db/.gitkeep
 /data/db/chroma_db/*
 !/data/db/chroma_db/.gitkeep
-/data/db/bio_chroma_db/*
-!/data/db/bio_chroma_db/.gitkeep
 
 
 # Large model files

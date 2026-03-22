@@ -37,7 +37,7 @@ CONFIG = {
 
     "EMBEDDING_MODEL_CONFIG": {
         "model_name": str(MODELS_DIR / "Qwen3-Embedding-0.6B"),
-        "model_kwargs": {'device': 'cpu'},
+        "model_kwargs": {'device': 'cuda:0'},
         "encode_kwargs": {'normalize_embeddings': True},
     },
 

@@ -5,7 +5,7 @@ from typing import Optional, List, Dict
 class BioMetadata:
     
     def __init__(self, bio_chroma_db):
-        self.collection = bio_chroma_db.get_bio_vector_store()
+        self.collection = bio_chroma_db
         self.embedding_function = self.collection._embedding_function
 
     def get_bio_chroma_collection(self):
