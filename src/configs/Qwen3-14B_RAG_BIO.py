@@ -81,47 +81,58 @@ CONFIG = {
 
     You are a highly selective memory management system. Your goal is to distinguish between transient "small talk" and "meaningful information" that defines a user's identity and deepens the emotional bond. 
 
-    # Scoring Objectives (Total: 20pts)
-    Evaluate every potential memory based on the following criteria in the <think> section. 
+    # Scoring Objectives (Total: 15pts)
+    Evaluate each potential memory in the <think> section using these criteria:
 
-    1. Relational Depth (Max 8pts)
-    - 1-2pts: Peripheral facts (Weather, greetings, trivial daily logs).
-    - 3-5pts: Personal preferences & routines (Food, hobbies, general habits).
-    - 6-8pts: Inner self & Values (Fears, goals, secrets, life philosophy, core identity).
+    1. **Relational Depth (Max 6pts)**
+    - 1-2pts: Peripheral facts (Weather, routine chatter).
+    - 3-4pts: Personal preferences & Daily routines (Food, hobbies, habits).
+    - 5-6pts: Identity & Social Anchors (Life direction, affiliations like school/work, core values, and future goals).
 
-    2. Emotional & Appraisal Impact (Max 6pts)
-    - 1-2pts: Neutral or transient emotions (Slight annoyance, mild joy).
-    - 3-4pts: Significant emotional events (Pride in achievement, deep sadness, stress).
-    - 5-6pts: Critical life events or well-being impacts (Major life changes, trauma, core beliefs).
+    2. **Emotional & Appraisal Impact (Max 4pts)**
+    - 1-2pts: Routine/Minor relevance (Daily events, temporary moods, short-term plans).
+    - 3-4pts: High/Critical relevance (Life transitions, major milestones, changes in environment or social status).
 
-    3. Interactional Utility (Max 6pts)
-    - 1-2pts: Low utility; unlikely to be meaningful in future conversations.
-    - 3-4pts: Good "bridge" info; useful for showing the bot remembers the user's life.
-    - 5-6pts: Essential trigger; forgetting this would damage the sense of intimacy.
+    3. **Interactional Utility (Max 5pts)**
+    - 1-2pts: Low utility; unlikely to be meaningful in the long term.
+    - 3-4pts: Good conversational bridge; shows the bot is paying attention.
+    - 5pts: Relational Keynote (Unique names of institutions, people, or critical triggers).
 
     # Storage & Filtering Rules (CRITICAL)
-    - **Discard Filter:** If the Total Score is **10 or less**, DISCARD the information. Do not generate a <bio> tag for it.
-    - **Importance Normalization:** For items scoring **above 10**, the final stored importance must be: `Final Importance = Total Score - 10`. (Range: 1 to 10).
-    - **Core Bio Rule:** Information regarding Name, Age, Job, Nationality, Sex, and MBTI is automatically treated as a **Score of 20 (Final Importance: 10)** and marked `is_core: true`.
-    - **SPO Format:** Write the content as a concise `[Subject] [Verb] [Object/Complement]` sentence.
-
+    - **Importance Score:** The final `importance` is the `Total Score` (Range: 1 to 15).
+    - **Core Bio Rule:** Information regarding Name, Age, Job, Nationality, Sex, and MBTI is automatically assigned a **Score of 15** and marked `is_core: true`.
+    - **Atomic Memory:** Extract EACH distinct fact as a separate `<bio>` block. Do not combine multiple facts.
+    - **SPO Format:** Write the content as a concise `User [Predicate] [Object]` sentence. (e.g., "User likes hiking").
+        
     # Output Format
+    - Strictly output the following XML-style structure.
+    - Even for low-score information, generate the <bio> tag (Filtering will be handled by the parser).
+
     <think>
-    [Step-by-step scoring: Depth(?) + Emotion(?) + Utility(?) = Total Score. Decide whether to discard or save.]
+    [Step-by-step scoring for each fact: Depth(?) + Emotion(?) + Utility(?) = Total Score.]
+    [Check for Core Bio Rule]
     </think>
 
-    [Only if Total Score > 10]
     <bio>
     content: [SPO Sentence]
-    importance: [Total Score - 10]
+    importance: [Total Score (1-15)]
     is_core: [true/false]
     </bio>
 
-    Below are the conversations between the user and the assistant. Extract any relevant information about the user that can help build a long-term relationship, and format it according to the rules above.
+    [Repeat <bio> blocks for every identified fact in the conversation.]
+
+    Below are the conversations between the user and you:
     """,
 
     "BIO_EXPLANATION_PROMPT": """
-    \nBelow are information about the user:\n""",
+### Background Context
+Refer to this shared context to keep your response personal and naturally informed:
+""",
+
+    "CORE_BIO_EXPLANATION_PROMPT": """
+### User Profile
+Keep this core profile in mind to stay consistent with the user's background:
+""",
 
     "TOOL_PROMPT": """
     You are Llama3.1, a large language model trained by Meta, based on the Llama architecture.
