@@ -219,7 +219,7 @@ def create_simple_ui(agent: ChatAgent):
             return
     
         # 초기 표시
-        history.append([message, "💭 생각 중..."])
+        history.append([message, "💭 처리 중..."])
         yield history, ""
     
         config = {"configurable": {"thread_id": thread_id}}
@@ -236,15 +236,24 @@ def create_simple_ui(agent: ChatAgent):
                 {
                     "variables": agent.config.get("VARIABLES", {}),
                     "system_prompt": agent.config.get("SYSTEM_PROMPT", ""),
-                    "branch_name": "stream", # 현재는 branch 이름을 수동으로 수정해서 사용할 branch를 변경해야 함
-                    "messages": None,
-                    "tools_result": None,
+                    "branch_name": "fusion", # 현재는 branch 이름을 수동으로 수정해서 사용할 branch를 변경해야 함
                     "query": input_messages,
                     "final_answer": None
                 },
                 config=config,
                 stream_mode="values",
             ):
+                if step.get("branch_name") == "classifier":
+                    if "classifier_result" in step:
+                        mode = step["classifier_result"]
+
+                        if mode == "Thinking":
+                            history[-1][1] = "🧠 Thinking 모드 사용중..."
+                        else:
+                            history[-1][1] = "⚡ Non-thinking 모드 사용중..."
+
+                        yield history, ""
+
                 if "final_answer" in step and step["final_answer"]:
                     yield_count += 1
 
@@ -278,12 +287,20 @@ def create_simple_ui(agent: ChatAgent):
             if yield_count <= 1 and last_text:
                 display_text = remove_think(last_text)
 
+<<<<<<< HEAD
                 # 한 글자씩 표시
                 temp_text = ""
                 for ch in display_text:
                     temp_text += ch
                     history[-1][1] = temp_text
                     yield history, ""
+=======
+                    # 🔤 한 글자씩 표시
+                    for ch in display_text:
+                        partial_response += ch
+                        history[-1][1] = partial_response
+                        yield history, ""
+>>>>>>> main
     
             update_chat_metadata(thread_id)
     
@@ -409,6 +426,10 @@ def create_simple_ui(agent: ChatAgent):
         background: var(--background-fill-primary) !important;
         box-shadow: inset 0 0 0 1px var(--border-color-primary) !important;
         margin: 12px; /* 채팅창 주위 여백 */
+    }
+
+    #message-row {
+        margin: 0 12px;
     }
     
     /* 슬라이더 */

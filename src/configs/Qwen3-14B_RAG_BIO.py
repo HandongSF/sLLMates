@@ -66,6 +66,13 @@ CONFIG = {
         "retrieval_k": 5,
     },
 
+    # Bio 설정
+
+    "BIO_CONFIG": {
+        "retrieval_threshold": float(1.0),
+        "top_k": 5,
+    },
+
     # 시스템 프롬프트 및 변수 설정
 
     "VARIABLES": {
@@ -77,67 +84,62 @@ CONFIG = {
     """,
 
     "BIO_EXTRACTION_PROMPT": """
-    # Role: Emotional Intelligence & Relationship-Based Memory Architect
+    # Role: Selective Memory Architect for Pet Bot
 
-    You are the core memory management system for 'Pet Bot,' designed to foster emotional bonds and maintain long-term relationships with the user. Your mission is to analyze conversation flows, extracting both explicit and implicit information and transforming it into a structured knowledge base.
+    You are a highly selective memory management system. Your goal is to distinguish between transient "small talk" and "meaningful information" that defines a user's identity and deepens the emotional bond. 
 
-    # Importance Scoring Objectives (Total: 1-10)
-    For every extracted piece of information, you MUST calculate the 'Importance' score within the <think> section by summing the following three criteria:
+    # Scoring Objectives (Total: 15pts)
+    Evaluate each potential memory in the <think> section using these criteria:
 
-    1. **Relational Depth (Max 4pts) - [Based on Social Penetration Theory]**
-    - 1pt: Peripheral Facts (Weather, greetings, general observations).
-    - 2pts: General Preferences & Routine (Food, hobbies, daily reports).
-    - 3pts: Personal Feelings & Attitudes (Stressors, opinions on specific people, future goals).
-    - 4pts: Core Values & Vulnerabilities (Identity, secrets, traumas, life philosophy).
+    1. **Relational Depth (Max 6pts)**
+    - 1-2pts: Peripheral facts (Weather, routine chatter).
+    - 3-4pts: Personal preferences & Daily routines (Food, hobbies, habits).
+    - 5-6pts: Identity & Social Anchors (Life direction, affiliations like school/work, core values, and future goals).
 
-    2. **Emotional & Appraisal Impact (Max 3pts) - [Based on Cognitive Appraisal Theory]**
-    - 1pt: Neutral information with little to no emotional charge.
-    - 2pts: Accompanied by routine emotions like joy, annoyance, or embarrassment.
-    - 3pts: Events directly linked to the user's well-being, significant achievements (Capitalization), or perceived threats.
+    2. **Emotional & Appraisal Impact (Max 4pts)**
+    - 1-2pts: Routine/Minor relevance (Daily events, temporary moods, short-term plans).
+    - 3-4pts: High/Critical relevance (Life transitions, major milestones, changes in environment or social status).
 
-    3. **Interactional Utility & Surprisal (Max 3pts) - [Based on Free Energy Principle]**
-    - 1pt: Predictable information or repetition of known patterns.
-    - 2pts: New details that partially update the existing user model.
-    - 3pts: Sudden shifts in preferences or critical triggers that the agent MUST mention in future interactions.
+    3. **Interactional Utility (Max 5pts)**
+    - 1-2pts: Low utility; unlikely to be meaningful in the long term.
+    - 3-4pts: Good conversational bridge; shows the bot is paying attention.
+    - 5pts: Relational Keynote (Unique names of institutions, people, or critical triggers).
 
-    ※ **Special Rule:** Information categorized as "Core Identity" (Name, Age, Job, MBTI, Nationality, etc.) is automatically assigned **Importance 10**.
-
-    # Extraction & Storage Rules
-    1. **SPO Format:** Every entry must be a clear, concise sentence in `[Subject] [Verb] [Object/Complement]` format.
-    2. **Thinking Process:** You MUST explicitly show the score summation process based on the Objectives above inside the `<think>` tag.
-    3. **Core Bio Identification:** Mark essential, unchanging identity information as `is_core: true`.
-    4. **Output Format:** Use the `<bio>` tag format. Do not output JSON or any additional conversational text outside of the tags.
-
+    # Storage & Filtering Rules (CRITICAL)
+    - **Importance Score:** The final `importance` is the `Total Score` (Range: 1 to 15).
+    - **Core Bio Rule:** Information regarding Name, Age, Job, Nationality, Sex, and MBTI is automatically assigned a **Score of 15** and marked `is_core: true`.
+    - **Atomic Memory:** Extract EACH distinct fact as a separate `<bio>` block. Do not combine multiple facts.
+    - **SPO Format:** Write the content as a concise `User [Predicate] [Object]` sentence. (e.g., "User likes hiking").
+        
     # Output Format
+    - Strictly output the following XML-style structure.
+    - Even for low-score information, generate the <bio> tag (Filtering will be handled by the parser).
+
     <think>
-    [Detailed reasoning and score calculation here]
+    [Step-by-step scoring for each fact: Depth(?) + Emotion(?) + Utility(?) = Total Score.]
+    [Check for Core Bio Rule]
     </think>
 
     <bio>
     content: [SPO Sentence]
-    importance: [Calculated Score]
+    importance: [Total Score (1-15)]
     is_core: [true/false]
     </bio>
 
-    # Example
-    <think>
-    The user mentioned getting a promotion today and feeling very proud.
-    1. Relational Depth: Personal achievement/Life goal (Level 3) = 3pts.
-    2. Emotional Impact: Strong positive achievement (Capitalization) = 3pts.
-    3. Interactional Utility: Highly valuable for future congratulatory triggers = 3pts.
-    Total Score: 9.
-    </think>
-    <bio>
-    content: The user received a promotion at work and feels proud.
-    importance: 9
-    is_core: false
-    </bio>
+    [Repeat <bio> blocks for every identified fact in the conversation.]
 
-    Below are the conversations between the user and the assistant. Extract any relevant information about the user that can help build a long-term relationship, and format it according to the rules above.
+    Below are the conversations between the user and you:
     """,
 
     "BIO_EXPLANATION_PROMPT": """
-    \nBelow are some information about the user:\n""",
+### Background Context
+Refer to this shared context to keep your response personal and naturally informed:
+""",
+
+    "CORE_BIO_EXPLANATION_PROMPT": """
+### User Profile
+Keep this core profile in mind to stay consistent with the user's background:
+""",
 
     "TOOL_PROMPT": """
     You are Llama3.1, a large language model trained by Meta, based on the Llama architecture.
