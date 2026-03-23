@@ -286,13 +286,10 @@ class ChatAgent:
             return "classifier"
         elif state.get("branch_name") == "bio":
             return "bio"
-<<<<<<< HEAD
         elif state.get("branch_name") == "stream":
             return "stream"
-=======
         elif state.get("branch_name") == "fusion":
             return "fusion"
->>>>>>> main
         else:
             return "default"
         
@@ -1560,28 +1557,14 @@ class ChatAgent:
         workflow.add_node("classifier_generate", self.classifier_generate)
         # branch name: bio
         workflow.add_node("bio_generate", self.bio_generate)
-<<<<<<< HEAD
-        workflow.add_node("retrieve_bio_memory", self.retrieve_bio_memory)
-        workflow.add_node("extract_and_save_bio_memory", self.extract_and_save_bio_memory)
+        workflow.add_node("bio_retrieve_bio_memory", self.bio_retrieve_bio_memory)
+        workflow.add_node("bio_extract_and_save_bio_memory", self.bio_extract_and_save_bio_memory)
         # branch name: stream
         workflow.add_node("stream_check_thinking", self.stream_check_thinking)
         workflow.add_node("stream_query_or_respond", self.stream_query_or_respond)
         workflow.add_node("stream_check_for_tools", self.stream_check_for_tools)
         workflow.add_node("stream_run_tools_and_pass_through_state", self.stream_run_tools_and_pass_through_state)
         workflow.add_node("stream_generate", self.stream_generate)
-        
-        # workflow.add_node("retrieve_bio_memory", retrieve_bio_memory)
-        # workflow.add_node("query_or_respond", query_or_respond)
-        # workflow.add_node("run_tools_and_pass_through_state", run_tools_and_pass_through_state)
-        # workflow.add_node("generate", self.generate)
-        # workflow.add_node("extract_and_save_bio_memory", self.extract_and_save_bio_memory)
-
-        # 노드 연결
-        # 시작
-        workflow.add_conditional_edges(START, self.router, {"default": "default_generate", "tools": "tools_query_or_respond", "classifier": "classifier_check_thinking", "bio": "retrieve_bio_memory", "stream": "stream_check_thinking"})
-=======
-        workflow.add_node("bio_retrieve_bio_memory", self.bio_retrieve_bio_memory)
-        workflow.add_node("bio_extract_and_save_bio_memory", self.bio_extract_and_save_bio_memory)
         # branch name: fusion
         workflow.add_node("fusion_check_thinking", self.fusion_check_thinking)
         workflow.add_node("fusion_retrieve_bio_memory", self.fusion_retrieve_bio_memory)
@@ -1593,8 +1576,7 @@ class ChatAgent:
 
         # 노드 연결
         # 시작
-        workflow.add_conditional_edges(START, self.router, {"default": "default_generate", "tools": "tools_query_or_respond", "classifier": "classifier_check_thinking", "bio": "bio_retrieve_bio_memory", "fusion": "fusion_check_thinking"})
->>>>>>> main
+        workflow.add_conditional_edges(START, self.router, {"default": "default_generate", "tools": "tools_query_or_respond", "classifier": "classifier_check_thinking", "bio": "bio_retrieve_bio_memory", "stream": "stream_check_thinking", "fusion": "fusion_check_thinking"})
         # branch name: default
         workflow.add_edge("default_generate", END)
         # branch name: tools
@@ -1607,25 +1589,14 @@ class ChatAgent:
         workflow.add_edge("classifier_run_tools_and_pass_through_state", "classifier_generate")
         workflow.add_edge("classifier_generate", END)
         # branch name: bio
-<<<<<<< HEAD
-        workflow.add_edge("retrieve_bio_memory", "bio_generate")
-        workflow.add_edge("bio_generate", "extract_and_save_bio_memory")
-        workflow.add_edge("extract_and_save_bio_memory", END)
+        workflow.add_edge("bio_retrieve_bio_memory", "bio_generate")
+        workflow.add_edge("bio_generate", "bio_extract_and_save_bio_memory")
+        workflow.add_edge("bio_extract_and_save_bio_memory", END)
         # branch name: stream
         workflow.add_edge("stream_check_thinking", "stream_query_or_respond")
         workflow.add_conditional_edges("stream_query_or_respond", self.stream_check_for_tools, {"no_tool": END, "tools": "stream_run_tools_and_pass_through_state"})
         workflow.add_edge("stream_run_tools_and_pass_through_state", "stream_generate")
         workflow.add_edge("stream_generate", END)
-
-        # workflow.add_edge("retrieve_bio_memory", "query_or_respond")
-        # workflow.add_conditional_edges("query_or_respond", self.check_for_tools, {"no_tool": "generate", "tools": "run_tools_and_pass_through_state"})
-        # workflow.add_edge("run_tools_and_pass_through_state", "generate")
-        # workflow.add_edge("generate", "extract_and_save_bio_memory")
-        # workflow.add_edge("extract_and_save_bio_memory", END)
-=======
-        workflow.add_edge("bio_retrieve_bio_memory", "bio_generate")
-        workflow.add_edge("bio_generate", "bio_extract_and_save_bio_memory")
-        workflow.add_edge("bio_extract_and_save_bio_memory", END)
         # branch name: fusion
         workflow.add_edge("fusion_check_thinking", "fusion_retrieve_bio_memory")
         workflow.add_edge("fusion_retrieve_bio_memory", "fusion_query_or_respond")
@@ -1633,7 +1604,6 @@ class ChatAgent:
         workflow.add_edge("fusion_run_tools_and_pass_through_state", "fusion_generate")
         workflow.add_edge("fusion_generate", "fusion_extract_and_save_bio_memory")
         workflow.add_edge("fusion_extract_and_save_bio_memory", END)
->>>>>>> main
 
         # 메모리 추가
         memory = SqliteSaver(conn=sqlite3.connect(SQLITE_DB_FILE, check_same_thread = False))
