@@ -131,17 +131,16 @@ def parse_bio_with_importance(text: str) -> List[Dict[str, any]]:
             importance_match = re.search(r"importance:\s*(\d+)", block)
             is_core_match = re.search(r"is_core:\s*(true|false)", block, re.IGNORECASE)
             
-            if not content_match:
+            if not (content_match and importance_match and is_core_match):
                 continue
+
+            raw_importance = int(importance_match.group(1)) 
+            if raw_importance <= 5:
+                continue
+            importance_value = max(1, min(raw_importance - 5, 10))
                 
             content = content_match.group(1).strip()
-            
-            # importance 파싱 및 제한 (기본값 5)
-            raw_importance = int(importance_match.group(1)) if importance_match else 5
-            importance_value = max(1, min(raw_importance, 10))
-            
-            # is_core 파싱 (기본값 False)
-            is_core = is_core_match.group(1).lower() == "true" if is_core_match else False
+            is_core = is_core_match.group(1).lower() == "true"
             
             bio_list.append({
                 "content": content,

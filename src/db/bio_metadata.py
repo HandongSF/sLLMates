@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List, Dict
 
 class BioMetadata:
@@ -11,8 +11,11 @@ class BioMetadata:
     def get_bio_chroma_collection(self):
         return self.collection
 
+    def get_embedding_function(self):
+        return self.embedding_function
 
-    def add_bio(self, text: str, importance: int = 3, bio_id: Optional[str] = None) -> str:
+
+    def add_bio(self, text: str, importance: int = 3, is_core: bool = False, bio_id: Optional[str] = None) -> str:
         """
         새로운 bio 문장을 ChromaDB에 추가합니다.
         
@@ -44,10 +47,12 @@ class BioMetadata:
                 metadatas=[{
                     "bio_id": bio_id,
                     "importance": importance,
+                    "is_core": is_core,
                     "last_updated": now
                 }]
             )
-            print(f"[Bio DB] 새로운 bio 추가 완료 (ID: {bio_id[:8]}...): {text[:50]}...")
+            core_tag = "[CORE]" if is_core else "[GENERAL]"
+            print(f"[Bio DB] {core_tag} 추가 완료 (ID: {bio_id[:8]}..., {text[:50]}...")
             return bio_id
             
         except Exception as e:
@@ -55,15 +60,9 @@ class BioMetadata:
             raise
 
 
-    def update_bio(self, bio_id: str, text: Optional[str] = None, 
-                importance: Optional[int] = None):
+    def update_bio(self, bio_id: str, text: Optional[str] = None, importance: Optional[int] = None, is_core: Optional[bool] = None):
         """
-        기존 bio 문장을 업데이트합니다.
-        
-        Args:
-            bio_id: 업데이트할 bio의 ID
-            text: 새로운 텍스트 (None이면 유지)
-            importance: 새로운 중요도 (None이면 유지)
+        기존 bio 문장을 업데이트하며, is_core 상태를 보존합니다.
         """
         collection = self.get_bio_chroma_collection()
         if collection is None:
@@ -71,7 +70,7 @@ class BioMetadata:
             return
         
         try:
-            # 기존 데이터 조회 (단일 ID만 조회하므로 안전)
+            # 1. 기존 데이터 조회
             existing = collection._collection.get(ids=[bio_id])
             
             if not existing['ids']:
@@ -81,12 +80,17 @@ class BioMetadata:
             current_metadata = existing['metadatas'][0]
             current_text = existing['documents'][0]
             
+            # 2. 값 결정 (인자가 None이면 기존 값 유지)
             new_text = text if text is not None else current_text
-            vector = self.embedding_function.embed_query(new_text)
             new_importance = importance if importance is not None else current_metadata.get('importance', 3)
+            # 중요! 기존 is_core 값을 유지하거나 새로 입력된 값을 사용함
+            new_is_core = is_core if is_core is not None else current_metadata.get('is_core', False)
+            
+            # 텍스트가 바뀌었다면 임베딩 다시 생성
+            vector = self.embedding_function.embed_query(new_text)
             now = datetime.now().isoformat()
             
-            # ChromaDB 업데이트
+            # 3. ChromaDB 업데이트 (메타데이터에 is_core 포함)
             collection._collection.update(
                 ids=[bio_id],
                 documents=[new_text],
@@ -94,15 +98,15 @@ class BioMetadata:
                 metadatas=[{
                     "bio_id": bio_id,
                     "importance": new_importance,
+                    "is_core": new_is_core, # 여기에 추가되어야 데이터가 'Core' 지위를 유지합니다.
                     "last_updated": now
                 }]
             )
-            print(f"[Bio DB] Bio 업데이트 완료 (ID: {bio_id[:8]}...)")
+            print(f"[Bio DB] Bio 업데이트 완료 (ID: {bio_id[:8]}..., Core: {new_is_core})")
             
         except Exception as e:
             print(f"[Bio DB] Bio 업데이트 실패: {e}")
             raise
-
 
     def delete_bio(self, bio_id: str):
         """
@@ -229,45 +233,39 @@ class BioMetadata:
             return 0
 
 
-    def save_or_update_bio(self, new_bio_blocks: List[Dict], distance_threshold: float = 0.25):
+    def save_or_update_bio(self, new_bio_blocks: List[Dict]):
         collection = self.get_bio_chroma_collection()
-        if collection is None:
-            print("[Bio DB] ChromaDB가 초기화되지 않았습니다.")
-            return
         
         for block in new_bio_blocks:
             text = block["content"].strip()
             importance = block.get("importance", 3)
+            is_core = block.get("is_core", False)
             
-            if not text:
-                continue
+            current_threshold = 0.6 if is_core else 0.25
             
             try:
-                # 유사한 기존 bio 검색
-                results = collection.similarity_search_with_score(text, k=3)
+                results = collection.similarity_search_with_score(
+                text, 
+                k=3,
+                filter={"is_core": is_core} 
+                )
                 is_updated = False
                 
                 for doc, score in results:
-                    if score < distance_threshold:
+                    if score < current_threshold:
                         bio_id = doc.metadata.get("bio_id")
-
-                        print(f"[Bio DB] 기존 항목 갱신됨 (distance={score:.2f}): {text[:50]}...")
-
-                        self.update_bio(
-                            bio_id,
-                            text=text,
-                            importance=importance
-                        )
-
+                        
+                        print(f"[Bio DB] {'Core' if is_core else 'General'} Match (dist={score:.2f}): Update Existing")
+                        self.update_bio(bio_id, text=text, importance=importance)
                         is_updated = True
                         break
 
                 if not is_updated:
-                    self.add_bio(text, importance)
+                    self.add_bio(text, importance, is_core=is_core)
                     
             except Exception as e:
-                print(f"[Bio DB] 유사도 검색 실패: {e}, 새로운 bio로 추가합니다.")
-                self.add_bio(text, importance)
+                print(f"[Bio DB] Error during deduplication: {e}")
+                self.add_bio(text, importance, is_core=is_core)
 
 
     def search_similar_bios(self, query_text: str, n_results: int = 5) -> List[Dict]:
@@ -303,3 +301,42 @@ class BioMetadata:
         except Exception as e:
             print(f"[Bio DB] 유사 bio 검색 실패: {e}")
             return []
+
+
+    from datetime import datetime, timedelta
+
+    def cleanup_expired_bio_memories(self):
+        """
+        유효기간이 지난 일반 메모리(Non-core)를 삭제합니다.
+        """
+        collection = self.get_bio_chroma_collection()
+        if not collection:
+            return
+
+        today = datetime.now()
+
+        try:
+            results = collection._collection.get(where={"is_core": False})
+            
+            ids_to_delete = []
+            
+            for i in range(len(results['ids'])):
+                bio_id = results['ids'][i]
+                metadata = results['metadatas'][i]
+                
+                last_updated = datetime.fromisoformat(metadata['last_updated'])
+                importance = metadata.get('importance', 3)
+                
+                expiration_limit = timedelta(days=importance * 10)
+                
+                if today - last_updated > expiration_limit:
+                    ids_to_delete.append(bio_id)
+
+            if ids_to_delete:
+                collection._collection.delete(ids=ids_to_delete)
+                print(f"[Bio DB Clean-up] {len(ids_to_delete)}개의 오래된 기억이 소멸되었습니다.")
+            else:
+                print("[Bio DB Clean-up] 삭제할 만료된 기억이 없습니다.")
+
+        except Exception as e:
+            print(f"[Bio DB Clean-up] 청소 중 오류 발생: {e}")

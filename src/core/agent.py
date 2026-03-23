@@ -6,8 +6,7 @@ from datetime import datetime
 import importlib
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
-from typing import Sequence, Dict, List, Optional
-from typing import Annotated
+from typing import Sequence, Dict, List, Optional, Tuple, Annotated
 from typing_extensions import Annotated, TypedDict
 from llama_cpp import Llama
 from llama_cpp.llama_chat_format import Jinja2ChatFormatter
@@ -25,6 +24,8 @@ from langgraph.prebuilt import ToolNode
 from langgraph.graph.message import add_messages
 from langchain_core.messages import trim_messages
 from langchain_community.chat_models import ChatLlamaCpp
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 from src.config import SELECTED_CONFIG_FILE, SQLITE_DB_FILE
 from src.db.vector_store import ChromaDBManager
@@ -60,7 +61,7 @@ class State(TypedDict):
     tools_result: Optional[List[ToolMessage]]
     """tool 실행 결과 메시지"""
 
-    bio_result: Optional[str]
+    bio_result: Tuple[str, str]
     """bio memory 검색 결과를 시스템 컨텍스트로 변환한 문자열"""
 
     query: HumanMessage
@@ -202,6 +203,8 @@ class ChatAgent:
         self.tools = ToolNode(self.tool_list)
 
         self.bio_metadata = BioMetadata(self.chroma_db_manager.get_bio_store())
+
+        self.bio_cleanup_scheduler()
 
         # app 선언
         self.app = self.create_workflow()
@@ -737,23 +740,52 @@ class ChatAgent:
     # branch name: 
     # branch name: bio
 
-    def retrieve_bio_memory(self, state: State):
-        bio_dict = self.bio_metadata.search_similar_bios(state["query"].content, 5)
+    def bio_retrieve_bio_memory(self, state: State, top_k: int = 5, threshold: float = 1.0):
 
-        bio_result = self.config["BIO_EXPLANATION_PROMPT"]
+        core_data = self.bio_metadata.get_bio_chroma_collection()._collection.get(
+        where={"is_core": True}  
+        )
 
-        if bio_dict:
-            for bio in bio_dict[:10]:
-                bio_result += f"-{bio["document"]}\n"
+        core_docs = core_data.get("documents", [])
+
+        if core_docs:
+            bio_core_result = self.config["CORE_BIO_EXPLANATION_PROMPT"]
+            for doc in core_docs:
+                bio_core_result += f"- {doc}\n"
         else:
-            bio_result = ""
+            bio_core_result = ""
+
+        vector = self.bio_metadata.get_embedding_function().embed_query(state["query"].content)
+        retrieved_bio = self.bio_metadata.get_bio_chroma_collection()._collection.query(
+            query_embeddings=[vector],
+            n_results = top_k,
+            include = ["documents", "metadatas", "distances"]
+        )
+
+        bio_general_result = self.config["BIO_EXPLANATION_PROMPT"]
+        general_docs = []
+
+        if retrieved_bio['documents'] and retrieved_bio['documents'][0]:
+            for i in range(len(retrieved_bio['documents'][0])):
+                distance = retrieved_bio['distances'][0][i]
+                content = retrieved_bio['documents'][0][i]
+                metadata = retrieved_bio["metadatas"][0][i]
+
+                if distance <= threshold and not metadata.get("is_core", False):
+                    general_docs.append(content)
+
+        if general_docs:
+            for doc in general_docs:
+                bio_general_result += f"- {doc}\n"
+        else:
+            bio_general_result = ""
 
         return {
-            "bio_result":bio_result
+            "bio_result": [bio_core_result, bio_general_result]
         }
 
     def bio_generate(self, state: State):
-        filled_system_prompt = state["system_prompt"].format(**state["variables"]) + state["bio_result"]
+        filled_system_prompt = state["system_prompt"].format(**state["variables"]) + state["bio_result"][0]
 
         conversation_messages = [
             message
@@ -761,11 +793,11 @@ class ChatAgent:
             if message.type in ("human") or (message.type == "ai" and not message.tool_calls)
         ]
 
-        trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + [state["query"]])
+        trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + [state["bio_result"][1]] + [state["query"]])
 
         openai_formatted_trimmed_messages = convert_to_openai_messages(trimmed_messages)
 
-        # pprint(openai_formatted_trimmed_messages)
+        pprint(openai_formatted_trimmed_messages)
 
         if self.formatter:            
             full_prompt = self.formatter(
@@ -788,8 +820,6 @@ class ChatAgent:
 
             text_output = response_data['choices'][0]['text'].strip()
         else:
-            # print("formatter = None")
-
             response_data = self.llm.create_chat_completion(
                 messages = openai_formatted_trimmed_messages,
                 max_tokens = self.config["CHAT_MODEL_CONFIG"].get("max_tokens", 16),
@@ -805,7 +835,6 @@ class ChatAgent:
             text_output = response_data['choices'][0]['message']['content'].strip()
         
         response = parse_llm_output(text_output)
-        print("bio_generate 결과: " + repr(response))
 
         add_messages = [state["query"]] + [response]
 
@@ -820,21 +849,17 @@ class ChatAgent:
             "final_answer": response
         }
 
-    def extract_and_save_bio_memory(self, state:State):
+    def bio_extract_and_save_bio_memory(self, state:State):
         start = time.time()
         bio_extraction_prompt = self.config["BIO_EXTRACTION_PROMPT"]
         trimmed_messages = self.trimmer.invoke([SystemMessage(bio_extraction_prompt)] + [state["query"]])
 
         openai_formatted_trimmed_messages = convert_to_openai_messages(trimmed_messages)
 
-        # pprint(openai_formatted_trimmed_messages)
-
         if self.formatter:            
             full_prompt = self.formatter(
                 messages = openai_formatted_trimmed_messages,
             ).prompt
-
-            print(full_prompt)
 
             response_data = self.llm.create_completion(
                 prompt = full_prompt,
@@ -850,8 +875,6 @@ class ChatAgent:
 
             text_output = response_data['choices'][0]['text'].strip()
         else:
-            # print("formatter = None")
-
             response_data = self.llm.create_chat_completion(
                 messages = openai_formatted_trimmed_messages,
                 max_tokens = self.config["CHAT_MODEL_CONFIG"].get("max_tokens", 16),
@@ -867,7 +890,6 @@ class ChatAgent:
             text_output = response_data['choices'][0]['message']['content'].strip()
         
         response = parse_llm_output(text_output)
-        print("extract_and_save_bio_memory 결과: " + repr(response))
         
         if response:
             bio_list = parse_bio_with_importance(response.content)
@@ -878,6 +900,25 @@ class ChatAgent:
         print(f"extract_and_save_bio_memory 실행 시간: {end - start:.5f}초")
 
         return 
+
+    def bio_cleanup_scheduler(self):
+        """기한이 만료된 Bio 메모리를 정리 스케줄러 함수 """
+        self.scheduler = BackgroundScheduler()
+
+        # Trigger the event everyday at 00:00/midnight 
+        trigger = CronTrigger(hour=0, minute=0)
+
+        self.scheduler.add_job(
+            self.bio_metadata.cleanup_expired_bio_memories,
+            trigger=trigger,
+            id="daily_memory_cleanup",
+            name="Delete expired bio memories every midnight",
+            replace_existing=True
+        )
+
+        self.scheduler.start()
+        print("[Bio Scheduler] 매일 자정 기한이 만료된 Bio memory가 자동 삭제됩니다.")
+
 
     # def query_or_respond(self, state: State):
     #     filled_system_prompt = TOOL_PROMPT.format(**state["variables"])
@@ -1015,8 +1056,8 @@ class ChatAgent:
         # branch name: 
         # branch name: bio
         workflow.add_node("bio_generate", self.bio_generate)
-        workflow.add_node("retrieve_bio_memory", self.retrieve_bio_memory)
-        workflow.add_node("extract_and_save_bio_memory", self.extract_and_save_bio_memory)
+        workflow.add_node("bio_retrieve_bio_memory", self.bio_retrieve_bio_memory)
+        workflow.add_node("bio_extract_and_save_bio_memory", self.bio_extract_and_save_bio_memory)
         
         # workflow.add_node("retrieve_bio_memory", retrieve_bio_memory)
         # workflow.add_node("query_or_respond", query_or_respond)
@@ -1026,7 +1067,7 @@ class ChatAgent:
 
         # 노드 연결
         # 시작
-        workflow.add_conditional_edges(START, self.router, {"default": "default_generate", "tools": "tools_query_or_respond", "classifier": "classifier_check_thinking", "bio": "retrieve_bio_memory"})
+        workflow.add_conditional_edges(START, self.router, {"default": "default_generate", "tools": "tools_query_or_respond", "classifier": "classifier_check_thinking", "bio": "bio_retrieve_bio_memory"})
         # branch name: default
         workflow.add_edge("default_generate", END)
         
@@ -1047,9 +1088,9 @@ class ChatAgent:
         # workflow.add_edge("tools_generate", END)
         
         # branch name: bio
-        workflow.add_edge("retrieve_bio_memory", "bio_generate")
-        workflow.add_edge("bio_generate", "extract_and_save_bio_memory")
-        workflow.add_edge("extract_and_save_bio_memory", END)
+        workflow.add_edge("bio_retrieve_bio_memory", "bio_generate")
+        workflow.add_edge("bio_generate", "bio_extract_and_save_bio_memory")
+        workflow.add_edge("bio_extract_and_save_bio_memory", END)
         # workflow.add_edge("retrieve_bio_memory", "query_or_respond")
         # workflow.add_conditional_edges("query_or_respond", self.check_for_tools, {"no_tool": "generate", "tools": "run_tools_and_pass_through_state"})
         # workflow.add_edge("run_tools_and_pass_through_state", "generate")
