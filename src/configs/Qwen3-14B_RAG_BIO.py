@@ -66,6 +66,13 @@ CONFIG = {
         "retrieval_k": 5,
     },
 
+    # Bio 설정
+
+    "BIO_CONFIG": {
+        "retrieval_threshold": float(1.0),
+        "top_k": 5,
+    },
+
     # 시스템 프롬프트 및 변수 설정
 
     "VARIABLES": {

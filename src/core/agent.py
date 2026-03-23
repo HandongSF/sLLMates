@@ -740,7 +740,9 @@ class ChatAgent:
     # branch name: 
     # branch name: bio
 
-    def bio_retrieve_bio_memory(self, state: State, top_k: int = 5, threshold: float = 1.0):
+    def bio_retrieve_bio_memory(self, state: State):
+        top_k = self.config["BIO_CONFIG"].get("top_k", 5)
+        threshold = self.config["BIO_CONFIG"].get("retrieval_threshold", 1.0)
 
         core_data = self.bio_metadata.get_bio_chroma_collection()._collection.get(
         where={"is_core": True}  
