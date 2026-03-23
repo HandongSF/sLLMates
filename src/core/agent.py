@@ -262,6 +262,8 @@ class ChatAgent:
             return "classifier"
         elif state.get("branch_name") == "bio":
             return "bio"
+        elif state.get("branch_name") == "stream":
+            return "stream"
         else:
             return "default"
         
@@ -734,7 +736,6 @@ class ChatAgent:
             "final_answer": response
         }
 
-    # branch name: 
     # branch name: bio
 
     def retrieve_bio_memory(self, state: State):
@@ -878,6 +879,262 @@ class ChatAgent:
         print(f"extract_and_save_bio_memory 실행 시간: {end - start:.5f}초")
 
         return 
+    
+    # branch name: stream
+
+    def stream_check_thinking(self, state: State):
+        if self.classifier_tokenizer == None or self.classifier_llm == None:
+            print("에러: classifier_tokenizer 또는 classifier_llm 없음")
+            sys.exit(1)
+
+        id2label = {0: "Non-thinking", 1: "Thinking"}
+
+        print(">>>query: " + state["query"].content)
+
+        raw_tokens = self.classifier_tokenizer.encode(state["query"].content, add_special_tokens=False)
+
+        if len(raw_tokens) > 510:
+            print(f"Query가 너무 길어 512 토큰에 맞게 자르기 시행 ({len(raw_tokens)} -> 510)")
+            raw_tokens = raw_tokens[:128] + raw_tokens[-382:]
+
+        input_ids = [self.classifier_tokenizer.cls_token_id] + raw_tokens + [self.classifier_tokenizer.sep_token_id]
+
+        inputs = {
+            "input_ids": torch.tensor([input_ids]).to(self.classifier_llm.device),
+            "attention_mask": torch.ones((1, len(input_ids))).to(self.classifier_llm.device)
+        }
+
+        with torch.no_grad():
+            outputs = self.classifier_llm(**inputs)
+    
+        logits = outputs.logits
+        probabilities = torch.nn.functional.softmax(logits, dim=-1)
+        predicted_class_id = torch.argmax(probabilities, dim=-1).item()
+
+        label_name = id2label.get(predicted_class_id, f"LABEL_{predicted_class_id}")
+
+        print(">>Label_name: " + label_name)
+
+        return {
+            "variables": state["variables"],
+            "system_prompt": state["system_prompt"],
+            "branch_name": label_name,
+            "messages": None,
+            "tools_result": None,
+            "query": state["query"],
+            "final_answer": None
+        }
+
+    def stream_query_or_respond(self, state: State):
+        filled_system_prompt = state["system_prompt"].format(**state["variables"])
+
+        conversation_messages = [
+            message
+            for message in state["history"]
+            if message.type in ("human") or (message.type == "ai" and not message.tool_calls)
+        ]
+
+        trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + [state["query"]])
+
+        openai_formatted_trimmed_messages = convert_to_openai_messages(trimmed_messages)
+
+        openai_formatted_tools = [convert_to_openai_tool(tool) for tool in self.tool_list]
+
+        #pprint(openai_formatted_trimmed_messages)
+
+        if self.formatter:            
+            full_prompt = self.formatter(
+                messages = openai_formatted_trimmed_messages,
+                tools = openai_formatted_tools,
+            ).prompt
+
+            if state["branch_name"] == "Non-thinking":
+                full_prompt += '<think>\n\n</think>\n\n'
+
+            print(full_prompt)
+            print('\n\n\n\n')
+
+            response_generator = self.llm.create_completion(
+                prompt = full_prompt,
+                max_tokens = self.config["CHAT_MODEL_CONFIG"].get("max_tokens", 16),
+                temperature = self.config["CHAT_MODEL_CONFIG"].get("temperature", 0.8),
+                top_p = self.config["CHAT_MODEL_CONFIG"].get("top_p", 0.95),
+                min_p = self.config["CHAT_MODEL_CONFIG"].get("min_p", 0.05),
+                stop = self.config["CHAT_MODEL_CONFIG"].get("stop", []),
+                top_k = self.config["CHAT_MODEL_CONFIG"].get("top_k", 40),   
+                stream = True, 
+            )
+
+            text_output = ""
+            for chunk in response_generator:
+                token = chunk['choices'][0]['text']
+                text_output += token
+                yield {"final_answer": text_output}
+
+            print("text_output >>>")
+            pprint(text_output)
+            print('\n\n\n\n')
+        else:
+            print("formatter = None")
+
+            response_generator = self.llm.create_chat_completion(
+                messages = openai_formatted_trimmed_messages,
+                tools = openai_formatted_tools,
+                max_tokens = self.config["CHAT_MODEL_CONFIG"].get("max_tokens", 16),
+                temperature = self.config["CHAT_MODEL_CONFIG"].get("temperature", 0.8),
+                top_p = self.config["CHAT_MODEL_CONFIG"].get("top_p", 0.95),
+                min_p = self.config["CHAT_MODEL_CONFIG"].get("min_p", 0.05),
+                stop = self.config["CHAT_MODEL_CONFIG"].get("stop", []),
+                top_k = self.config["CHAT_MODEL_CONFIG"].get("top_k", 40),  
+                stream = True, 
+            )
+
+            text_output = ""
+            for chunk in response_generator:
+                token = chunk['choices'][0]['message']['content']
+                text_output += token
+                yield {"final_answer": text_output}
+
+            print("text_output >>>")
+            pprint(text_output)
+            print('\n\n\n\n')
+        
+        response = parse_llm_output(text_output)
+
+        print("response >>>")
+        pprint(response)
+        print('\n\n\n\n')
+ 
+        if response.tool_calls:
+            return {
+                "variables": state["variables"],
+                "system_prompt": state["system_prompt"],
+                "branch_name": state["branch_name"],
+                "messages": [response],
+                "tools_result": None,
+                "query": state["query"],
+                "final_answer": None
+            }
+        
+        add_messages = [state["query"]] + [response]
+
+        return {
+            "variables": state["variables"],
+            "system_prompt": state["system_prompt"],
+            "history": add_messages,
+            "branch_name": state["branch_name"],
+            "messages": None,
+            "tools_result": None,
+            "query": state["query"],
+            "final_answer": response
+        }
+
+    def stream_check_for_tools(self, state: State):
+        if state.get("messages"):
+            return "tools"
+        else:
+            return "no_tool"
+
+    def stream_run_tools_and_pass_through_state(self, state: State):
+        tools_result = self.tools.invoke(state["messages"])
+
+        return {
+            "variables": state["variables"],
+            "system_prompt": state["system_prompt"],
+            "branch_name": state["branch_name"],
+            "messages": state["messages"],
+            "tools_result": tools_result,
+            "query": state["query"],
+            "final_answer": None
+        }
+
+    def stream_generate(self, state: State):
+        filled_system_prompt = state["system_prompt"].format(**state["variables"])
+
+        conversation_messages = [
+            message
+            for message in state["history"]
+            if message.type in ("human") or (message.type == "ai" and not message.tool_calls)
+        ]
+
+        trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + state["tools_result"] + [state["query"]])
+
+        openai_formatted_trimmed_messages = convert_to_openai_messages(trimmed_messages)
+
+        pprint(openai_formatted_trimmed_messages)
+
+        if self.formatter:
+            full_prompt = self.formatter(
+                messages = openai_formatted_trimmed_messages,
+            ).prompt
+
+            if state["branch_name"] == "Non-thinking":
+                full_prompt += '<think>\n\n</think>\n\n'
+
+            print(full_prompt)
+
+            response_generator = self.llm.create_completion(
+                prompt = full_prompt,
+                max_tokens = self.config["CHAT_MODEL_CONFIG"].get("max_tokens", 16),
+                temperature = self.config["CHAT_MODEL_CONFIG"].get("temperature", 0.8),
+                top_p = self.config["CHAT_MODEL_CONFIG"].get("top_p", 0.95),
+                min_p = self.config["CHAT_MODEL_CONFIG"].get("min_p", 0.05),
+                stop = self.config["CHAT_MODEL_CONFIG"].get("stop", []),
+                top_k = self.config["CHAT_MODEL_CONFIG"].get("top_k", 40),   
+                stream = True,  
+            )
+
+            text_output = ""
+            for chunk in response_generator:
+                token = chunk['choices'][0]['text']
+                text_output += token
+                yield {"final_answer": text_output}
+
+            print("text_output >>>")
+            pprint(text_output)
+            print('\n\n\n\n')
+        else:
+            print("formatter = None")
+
+            response_generator = self.llm.create_chat_completion(
+                messages = openai_formatted_trimmed_messages,
+                max_tokens = self.config["CHAT_MODEL_CONFIG"].get("max_tokens", 16),
+                temperature = self.config["CHAT_MODEL_CONFIG"].get("temperature", 0.8),
+                top_p = self.config["CHAT_MODEL_CONFIG"].get("top_p", 0.95),
+                min_p = self.config["CHAT_MODEL_CONFIG"].get("min_p", 0.05),
+                stop = self.config["CHAT_MODEL_CONFIG"].get("stop", []),
+                top_k = self.config["CHAT_MODEL_CONFIG"].get("top_k", 40),  
+                stream = True, 
+            )
+
+            text_output = ""
+            for chunk in response_generator:
+                token = chunk['choices'][0]['message']['content']
+                text_output += token
+                yield {"final_answer": text_output}
+
+            print("text_output >>>")
+            pprint(text_output)
+            print('\n\n\n\n')
+        
+        response = parse_llm_output(text_output)
+
+        print("response >>>")
+        pprint(response)
+        print('\n\n\n\n')
+
+        add_messages = [state["query"]] + state["messages"] + state["tools_result"] + [response]
+
+        return {
+            "variables": state["variables"],
+            "system_prompt": state["system_prompt"],
+            "history": add_messages,
+            "branch_name": state["branch_name"],
+            "messages": state["messages"],
+            "tools_result": state["tools_result"],
+            "query": state["query"],
+            "final_answer": response
+        }
 
     # def query_or_respond(self, state: State):
     #     filled_system_prompt = TOOL_PROMPT.format(**state["variables"])
@@ -1012,11 +1269,16 @@ class ChatAgent:
         workflow.add_node("classifier_check_for_tools", self.classifier_check_for_tools)
         workflow.add_node("classifier_run_tools_and_pass_through_state", self.classifier_run_tools_and_pass_through_state)
         workflow.add_node("classifier_generate", self.classifier_generate)
-        # branch name: 
         # branch name: bio
         workflow.add_node("bio_generate", self.bio_generate)
         workflow.add_node("retrieve_bio_memory", self.retrieve_bio_memory)
         workflow.add_node("extract_and_save_bio_memory", self.extract_and_save_bio_memory)
+        # branch name: stream
+        workflow.add_node("stream_check_thinking", self.stream_check_thinking)
+        workflow.add_node("stream_query_or_respond", self.stream_query_or_respond)
+        workflow.add_node("stream_check_for_tools", self.stream_check_for_tools)
+        workflow.add_node("stream_run_tools_and_pass_through_state", self.stream_run_tools_and_pass_through_state)
+        workflow.add_node("stream_generate", self.stream_generate)
         
         # workflow.add_node("retrieve_bio_memory", retrieve_bio_memory)
         # workflow.add_node("query_or_respond", query_or_respond)
@@ -1026,30 +1288,28 @@ class ChatAgent:
 
         # 노드 연결
         # 시작
-        workflow.add_conditional_edges(START, self.router, {"default": "default_generate", "tools": "tools_query_or_respond", "classifier": "classifier_check_thinking", "bio": "retrieve_bio_memory"})
+        workflow.add_conditional_edges(START, self.router, {"default": "default_generate", "tools": "tools_query_or_respond", "classifier": "classifier_check_thinking", "bio": "retrieve_bio_memory", "stream": "stream_check_thinking"})
         # branch name: default
         workflow.add_edge("default_generate", END)
-        
         # branch name: tools
         workflow.add_conditional_edges("tools_query_or_respond", self.tools_check_for_tools, {"no_tool": END, "tools": "tools_run_tools_and_pass_through_state"})
         workflow.add_edge("tools_run_tools_and_pass_through_state", "tools_generate")
         workflow.add_edge("tools_generate", END)
-        
         # branch name: classifier
         workflow.add_edge("classifier_check_thinking", "classifier_query_or_respond")
         workflow.add_conditional_edges("classifier_query_or_respond", self.classifier_check_for_tools, {"no_tool": END, "tools": "classifier_run_tools_and_pass_through_state"})
         workflow.add_edge("classifier_run_tools_and_pass_through_state", "classifier_generate")
         workflow.add_edge("classifier_generate", END)
-        
-        # branch name: tools
-        # workflow.add_conditional_edges("tools_query_or_respond", self.tools_check_for_tools, {"no_tool": END, "tools": "tools_run_tools_and_pass_through_state"})
-        # workflow.add_edge("tools_run_tools_and_pass_through_state", "tools_generate")
-        # workflow.add_edge("tools_generate", END)
-        
         # branch name: bio
         workflow.add_edge("retrieve_bio_memory", "bio_generate")
         workflow.add_edge("bio_generate", "extract_and_save_bio_memory")
         workflow.add_edge("extract_and_save_bio_memory", END)
+        # branch name: stream
+        workflow.add_edge("stream_check_thinking", "stream_query_or_respond")
+        workflow.add_conditional_edges("stream_query_or_respond", self.stream_check_for_tools, {"no_tool": END, "tools": "stream_run_tools_and_pass_through_state"})
+        workflow.add_edge("stream_run_tools_and_pass_through_state", "stream_generate")
+        workflow.add_edge("stream_generate", END)
+
         # workflow.add_edge("retrieve_bio_memory", "query_or_respond")
         # workflow.add_conditional_edges("query_or_respond", self.check_for_tools, {"no_tool": "generate", "tools": "run_tools_and_pass_through_state"})
         # workflow.add_edge("run_tools_and_pass_through_state", "generate")
