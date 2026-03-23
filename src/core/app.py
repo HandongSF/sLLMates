@@ -214,7 +214,7 @@ def create_simple_ui(agent: ChatAgent):
             return
     
         # 초기 표시
-        history.append([message, "💭 생각 중..."])
+        history.append([message, "💭 처리 중..."])
         yield history, ""
     
         config = {"configurable": {"thread_id": thread_id}}
@@ -228,7 +228,7 @@ def create_simple_ui(agent: ChatAgent):
                 {
                     "variables": agent.config.get("VARIABLES", {}),
                     "system_prompt": agent.config.get("SYSTEM_PROMPT", ""),
-                    "branch_name": "bio", # 현재는 branch 이름을 수동으로 수정해서 사용할 branch를 변경해야 함
+                    "branch_name": "classifier", # 현재는 branch 이름을 수동으로 수정해서 사용할 branch를 변경해야 함
                     "messages": None,
                     "tools_result": None,
                     "query": input_messages,
@@ -237,6 +237,17 @@ def create_simple_ui(agent: ChatAgent):
                 config=config,
                 stream_mode="values",
             ):
+                if step.get("branch_name") == "classifier":
+                    if "classifier_result" in step:
+                        mode = step["classifier_result"]
+
+                        if mode == "Thinking":
+                            history[-1][1] = "🧠 Thinking 모드 사용중..."
+                        else:
+                            history[-1][1] = "⚡ Non-thinking 모드 사용중..."
+
+                        yield history, ""
+
                 if "final_answer" in step and step["final_answer"]:
                     text_piece = (
                         step["final_answer"].content
@@ -246,7 +257,6 @@ def create_simple_ui(agent: ChatAgent):
 
                     display_text = remove_think(text_piece)
 
-    
                     # 🔤 한 글자씩 표시
                     for ch in display_text:
                         partial_response += ch

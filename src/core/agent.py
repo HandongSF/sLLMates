@@ -54,6 +54,9 @@ class State(TypedDict):
     branch_name: str
     """사용할 branch 이름"""
 
+    classifier_result: str
+    """classifier 결과"""
+
     messages: Optional[List[BaseMessage]]
     """tool 호출이 포함된 임시 메시지 (tool 실행용)"""
 
@@ -546,7 +549,8 @@ class ChatAgent:
         return {
             "variables": state["variables"],
             "system_prompt": state["system_prompt"],
-            "branch_name": label_name,
+            "branch_name": state["branch_name"],
+            "classifier_result": label_name,
             "messages": None,
             "tools_result": None,
             "query": state["query"],
@@ -576,7 +580,7 @@ class ChatAgent:
                 tools = openai_formatted_tools,
             ).prompt
 
-            if state["branch_name"] == "Non-thinking":
+            if state["classifier_result"] == "Non-thinking":
                 full_prompt += '<think>\n\n</think>\n\n'
 
             print(full_prompt)
@@ -624,6 +628,7 @@ class ChatAgent:
                 "variables": state["variables"],
                 "system_prompt": state["system_prompt"],
                 "branch_name": state["branch_name"],
+                "classifier_result": state["classifier_result"],
                 "messages": [response],
                 "tools_result": None,
                 "query": state["query"],
@@ -637,6 +642,7 @@ class ChatAgent:
             "system_prompt": state["system_prompt"],
             "history": add_messages,
             "branch_name": state["branch_name"],
+            "classifier_result": state["classifier_result"],
             "messages": None,
             "tools_result": None,
             "query": state["query"],
@@ -656,6 +662,7 @@ class ChatAgent:
             "variables": state["variables"],
             "system_prompt": state["system_prompt"],
             "branch_name": state["branch_name"],
+            "classifier_result": state["classifier_result"],
             "messages": state["messages"],
             "tools_result": tools_result,
             "query": state["query"],
@@ -682,7 +689,7 @@ class ChatAgent:
                 messages = openai_formatted_trimmed_messages,
             ).prompt
 
-            if state["branch_name"] == "Non-thinking":
+            if state["classifier_result"] == "Non-thinking":
                 full_prompt += '<think>\n\n</think>\n\n'
 
             print(full_prompt)
@@ -728,6 +735,7 @@ class ChatAgent:
             "system_prompt": state["system_prompt"],
             "history": add_messages,
             "branch_name": state["branch_name"],
+            "classifier_result": state["classifier_result"],
             "messages": state["messages"],
             "tools_result": state["tools_result"],
             "query": state["query"],
