@@ -1150,7 +1150,7 @@ class ChatAgent:
             for message in state["history"]
             if message.type in ("human") or (message.type == "ai" and not message.tool_calls)
         ]
-
+        
         trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + state["tools_result"] + [ToolMessage(content=state["bio_result"][1], tool_call_id="temp")] + [state["query"]])
 
         openai_formatted_trimmed_messages = convert_to_openai_messages(trimmed_messages)
