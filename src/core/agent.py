@@ -1039,7 +1039,7 @@ class ChatAgent:
             if message.type in ("human") or (message.type == "ai" and not message.tool_calls)
         ]
 
-        trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + [state["query"]])
+        trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + [state["bio_result"][1]] + [state["query"]])
 
         openai_formatted_trimmed_messages = convert_to_openai_messages(trimmed_messages)
 
@@ -1151,7 +1151,7 @@ class ChatAgent:
             if message.type in ("human") or (message.type == "ai" and not message.tool_calls)
         ]
 
-        trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + state["tools_result"] + [state["query"]])
+        trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + state["tools_result"] + [state["bio_result"][1]] + [state["query"]])
 
         openai_formatted_trimmed_messages = convert_to_openai_messages(trimmed_messages)
 
