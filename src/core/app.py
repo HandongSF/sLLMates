@@ -287,20 +287,12 @@ def create_simple_ui(agent: ChatAgent):
             if yield_count <= 1 and last_text:
                 display_text = remove_think(last_text)
 
-<<<<<<< HEAD
                 # 한 글자씩 표시
                 temp_text = ""
                 for ch in display_text:
                     temp_text += ch
                     history[-1][1] = temp_text
                     yield history, ""
-=======
-                    # 🔤 한 글자씩 표시
-                    for ch in display_text:
-                        partial_response += ch
-                        history[-1][1] = partial_response
-                        yield history, ""
->>>>>>> main
     
             update_chat_metadata(thread_id)
     
