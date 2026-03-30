@@ -824,7 +824,7 @@ class ChatAgent:
             if message.type in ("human") or (message.type == "ai" and not message.tool_calls)
         ]
 
-        trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + [state["bio_result"][1]] + [state["query"]])
+        trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + [ToolMessage(content=state["bio_result"][1], tool_call_id="temp")] + [state["query"]])
 
         openai_formatted_trimmed_messages = convert_to_openai_messages(trimmed_messages)
 
@@ -1300,7 +1300,7 @@ class ChatAgent:
             if message.type in ("human") or (message.type == "ai" and not message.tool_calls)
         ]
 
-        trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + [state["query"]])
+        trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + [ToolMessage(content=state["bio_result"][1], tool_call_id="temp")] + [state["query"]])
 
         openai_formatted_trimmed_messages = convert_to_openai_messages(trimmed_messages)
 
@@ -1411,8 +1411,8 @@ class ChatAgent:
             for message in state["history"]
             if message.type in ("human") or (message.type == "ai" and not message.tool_calls)
         ]
-
-        trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + state["tools_result"] + [state["query"]])
+        
+        trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + state["tools_result"] + [ToolMessage(content=state["bio_result"][1], tool_call_id="temp")] + [state["query"]])
 
         openai_formatted_trimmed_messages = convert_to_openai_messages(trimmed_messages)
 
@@ -1536,7 +1536,7 @@ class ChatAgent:
             "tools_result": state["tools_result"],
             "bio_result": state["bio_result"],
             "query": state["query"],
-            "final_answer": state["final_answer"]
+            "final_answer": None
         }
     
     # 그래프 생성 함수
