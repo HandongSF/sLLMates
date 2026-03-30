@@ -192,10 +192,6 @@ def create_simple_ui(agent: ChatAgent):
         # 완성된 <think>...</think> 제거
         remove_think_text = re.sub(r"<think>.*?</think>", "", text, flags=re.S)
 
-        # 아직 닫히지 않은 <think> 이후 내용도 제거 (스트리밍 모드)
-        if '<think>' in remove_think_text:
-            remove_think_text = remove_think_text.split('<think>')[0]
-
         return remove_think_text.strip()
 
     # UI Helper Functions
@@ -213,11 +209,6 @@ def create_simple_ui(agent: ChatAgent):
             yield history, ""
             return
     
-        if message.lower().strip() in ["exit", "q", "끝"]:
-            history.append([message, "대화를 종료합니다."])
-            yield history, ""
-            return
-    
         # 초기 표시
         history.append([message, "💭 처리 중..."])
         yield history, ""
@@ -226,12 +217,10 @@ def create_simple_ui(agent: ChatAgent):
     
         try:
             input_messages = HumanMessage(content=message)
-            yield_count = 0
-            last_text = ""
+            all_text = ""
+            display_text = ""
             is_intercepted = False
-            current_status = ""
     
-            # LangChain streaming
             for step in agent.app.stream(
                 {
                     "variables": agent.config.get("VARIABLES", {}),
@@ -243,56 +232,36 @@ def create_simple_ui(agent: ChatAgent):
                 config=config,
                 stream_mode="values",
             ):
-                if step.get("branch_name") == "classifier":
-                    if "classifier_result" in step:
-                        mode = step["classifier_result"]
-
-                        if mode == "Thinking":
-                            history[-1][1] = "🧠 Thinking 모드 사용중..."
-                        else:
-                            history[-1][1] = "⚡ Non-thinking 모드 사용중..."
-
-                        yield history, ""
-
+                print("for 작동")
                 if "final_answer" in step and step["final_answer"]:
-                    yield_count += 1
-
+                    print("final_answer 작동")
                     raw_text = step["final_answer"]
+
+                    # non-stream 모드 답변 처리
                     if hasattr(raw_text, "content"):
                         raw_text = raw_text.content
-                    last_text = raw_text
-
-                    # 실시간 스트리밍 처리
-                    if not is_intercepted and len(raw_text) < 20:
-                        if "<tool" in raw_text:
-                            is_intercepted = True
-                            history[-1][1] = "적절한 도구를 찾는 중입니다..."
-                            yield history, ""
-                            continue
-                        elif raw_text.strip().startswith("{"): # JSON 호출 감지
-                            is_intercepted = True
-                            history[-1][1] = "도구를 사용하고 있습니다..."
-                            yield history, ""
-                            continue
-                        elif "<think" in raw_text and "</think>" not in raw_text:
-                            history[-1][1] = "생각 중..."
-                            yield history, ""
-
-                    if not is_intercepted:
-                        display_text = remove_think(last_text)
+                        display_text += remove_think(raw_text)
                         history[-1][1] = display_text
                         yield history, ""
+                        continue
 
-            # Non 스트리밍 모드 처리 (루프가 끝난 후, 데이터가 딱 한 번만 들어왔다면)
-            if yield_count <= 1 and last_text:
-                display_text = remove_think(last_text)
-
-                # 한 글자씩 표시
-                temp_text = ""
-                for ch in display_text:
-                    temp_text += ch
-                    history[-1][1] = temp_text
-                    yield history, ""
+                    # stream 모드 답변 처리
+                    if "<think>" in raw_text:
+                        history[-1][1] = "Thinking 모드 사용중..."
+                        is_intercepted = True
+                        yield history, ""
+                    elif "</think>" in raw_text:
+                        is_intercepted = False
+                    elif "<tool_call>" in raw_text:
+                        is_intercepted = True
+                        history[-1][1] = "도구를 사용하고 있습니다..."
+                        yield history, ""
+                    elif "</tool_call>" in raw_text:
+                        is_intercepted = False
+                    elif not is_intercepted:
+                        display_text += raw_text
+                        history[-1][1] = display_text
+                        yield history, ""
     
             update_chat_metadata(thread_id)
     

@@ -6,7 +6,7 @@ from datetime import datetime
 import importlib
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
-from typing import Sequence, Dict, List, Optional, Tuple, Annotated
+from typing import Sequence, Dict, List, Optional, Tuple, Annotated, Union
 from typing_extensions import Annotated, TypedDict
 from llama_cpp import Llama
 from llama_cpp.llama_chat_format import Jinja2ChatFormatter
@@ -70,7 +70,7 @@ class State(TypedDict):
     query: HumanMessage
     """현재 사용자 입력"""
 
-    final_answer: Optional[AIMessage]
+    final_answer: Optional[Union[AIMessage, str]]
     """최종 LLM 응답"""
 
 class ChatAgent:
@@ -1021,7 +1021,7 @@ class ChatAgent:
             for chunk in response_generator:
                 token = chunk['choices'][0]['text']
                 text_output += token
-                yield {"final_answer": text_output}
+                yield {"final_answer": token}
 
             print("text_output >>>")
             pprint(text_output)
@@ -1045,12 +1045,12 @@ class ChatAgent:
             for chunk in response_generator:
                 token = chunk['choices'][0]['message']['content']
                 text_output += token
-                yield {"final_answer": text_output}
+                yield {"final_answer": token}
 
             print("text_output >>>")
             pprint(text_output)
             print('\n\n\n\n')
-        
+
         response = parse_llm_output(text_output)
 
         print("response >>>")
@@ -1058,7 +1058,7 @@ class ChatAgent:
         print('\n\n\n\n')
  
         if response.tool_calls:
-            return {
+            yield {
                 "variables": state["variables"],
                 "system_prompt": state["system_prompt"],
                 "branch_name": state["branch_name"],
@@ -1067,10 +1067,11 @@ class ChatAgent:
                 "query": state["query"],
                 "final_answer": None
             }
+            return
         
         add_messages = [state["query"]] + [response]
 
-        return {
+        yield {
             "variables": state["variables"],
             "system_prompt": state["system_prompt"],
             "history": add_messages,
@@ -1078,8 +1079,9 @@ class ChatAgent:
             "messages": None,
             "tools_result": None,
             "query": state["query"],
-            "final_answer": response
+            #"final_answer": response
         }
+        return
 
     def stream_check_for_tools(self, state: State):
         if state.get("messages"):
@@ -1140,7 +1142,7 @@ class ChatAgent:
             for chunk in response_generator:
                 token = chunk['choices'][0]['text']
                 text_output += token
-                yield {"final_answer": text_output}
+                yield {"final_answer": token}
 
             print("text_output >>>")
             pprint(text_output)
@@ -1163,7 +1165,7 @@ class ChatAgent:
             for chunk in response_generator:
                 token = chunk['choices'][0]['message']['content']
                 text_output += token
-                yield {"final_answer": text_output}
+                yield {"final_answer": token}
 
             print("text_output >>>")
             pprint(text_output)
@@ -1177,7 +1179,7 @@ class ChatAgent:
 
         add_messages = [state["query"]] + state["messages"] + state["tools_result"] + [response]
 
-        return {
+        yield {
             "variables": state["variables"],
             "system_prompt": state["system_prompt"],
             "history": add_messages,
@@ -1185,8 +1187,9 @@ class ChatAgent:
             "messages": state["messages"],
             "tools_result": state["tools_result"],
             "query": state["query"],
-            "final_answer": response
+            #"final_answer": response
         }
+        return
 
     # branch name: fusion
 
