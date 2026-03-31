@@ -71,6 +71,7 @@ CONFIG = {
     "BIO_CONFIG": {
         "retrieval_threshold": float(1.0),
         "top_k": 5,
+        "extraction_token_threshold": 512,
     },
 
     # 시스템 프롬프트 및 변수 설정

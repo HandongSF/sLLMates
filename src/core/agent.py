@@ -8,7 +8,7 @@ import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from typing import Sequence, Dict, List, Optional, Tuple, Annotated
 from typing_extensions import Annotated, TypedDict
-from llama_cpp import Llama
+from llama_cpp import Llama, LlamaState
 from llama_cpp.llama_chat_format import Jinja2ChatFormatter
 from langchain_core.utils.function_calling import convert_to_openai_tool
 import langchain
@@ -67,6 +67,12 @@ class State(TypedDict):
     bio_result: Optional[Tuple[str, str]]
     """bio memory 검색 결과를 시스템 컨텍스트로 변환한 문자열"""
 
+    bio_extraction_buffer: Optional[Dict[str, any]]
+    """bio extraction을 위해 query들을 모아놓는 버퍼, token count도 포함"""
+
+    upcoming_thread_id: Optional[str]
+    """현재 대화 스레드 ID (대화창이 바뀔 때 bio 추출 실행)"""
+
     query: HumanMessage
     """현재 사용자 입력"""
 
@@ -87,6 +93,11 @@ class ChatAgent:
 
     llm: Llama
     """llama.cpp의 llm 클래스"""
+
+    kv_cache_snapshot: Optional[LlamaState] = None
+    """llama.cpp의 키-값 캐시 스냅샷 (바이너리 형태)"""
+
+    current_thread_id: Optional[str]
 
     formatter: any
 
@@ -209,6 +220,8 @@ class ChatAgent:
 
         self.bio_cleanup_scheduler()
 
+        self.current_thread_id = None
+
         # app 선언
         self.app = self.create_workflow()
 
@@ -256,6 +269,20 @@ class ChatAgent:
                     total_tokens += len(content_str) // 4
         
         return total_tokens
+    
+    def get_num_tokens_from_query(self, query: HumanMessage) -> int:
+        content_str = query.content
+
+        if content_str:
+            try:
+                message_bytes = content_str.encode("utf-8")
+                tokens = self.llm.tokenize(message_bytes)
+                return len(tokens)
+            except Exception as e:
+                print(f"Warning: Could not tokenize query content: {e}")
+                return len(content_str) // 4
+        
+        return 0
     
     def bio_cleanup_scheduler(self):
         """기한이 만료된 Bio 메모리를 정리 스케줄러 함수 """
@@ -814,6 +841,15 @@ class ChatAgent:
         }
 
     def bio_generate(self, state: State):
+        
+        start_time = time.time()
+        if self.kv_cache_snapshot is not None:
+            self.llm.load_state(self.kv_cache_snapshot) # KV 캐시 스냅샷 로드
+            self.kv_cache_snapshot = None # 로드 후 스냅샷 초기화
+            print("Bio Memory 실행 후, 이전 대화 KV 캐시 스냅샷이 로드되었습니다.")
+        end_time = time.time()
+        print(f"KV 캐시 스냅샷 로드에 걸린 시간: {end_time - start_time:.2f} seconds")
+
         filled_system_prompt = state["system_prompt"].format(**state["variables"]) + state["bio_result"][0]
 
         conversation_messages = [
@@ -832,6 +868,8 @@ class ChatAgent:
             full_prompt = self.formatter(
                 messages = openai_formatted_trimmed_messages,
             ).prompt
+
+            full_prompt += '<think>\n\n</think>\n\n'
 
             print(full_prompt)
 
@@ -867,6 +905,18 @@ class ChatAgent:
 
         add_messages = [state["query"]] + [response]
 
+        if state.get("bio_extraction_buffer") is None:
+            state["bio_extraction_buffer"] = {
+                "queries": [],
+                "token_count": 0
+            }
+
+        state["bio_extraction_buffer"]["queries"].append(state["query"].content)
+        state["bio_extraction_buffer"]["token_count"] += self.get_num_tokens_from_query(state["query"])
+        print(f"현재 추가된 Bio 추출 버퍼 쿼리: {state['query'].content}")
+        print(f"현재 추가된 쿼리 토큰 수: {self.get_num_tokens_from_query(state['query'])}")
+        print(f"현재 Bio 추출 버퍼에 쌓인 토큰 수: {state['bio_extraction_buffer']['token_count']}")
+        
         return {
             "variables": state["variables"],
             "system_prompt": state["system_prompt"],
@@ -875,13 +925,45 @@ class ChatAgent:
             "messages": None,
             "tools_result": None,
             "query": state["query"],
+            "bio_extraction_buffer": state["bio_extraction_buffer"],
             "final_answer": response
         }
+    
+    def bio_check_for_bio_extraction(self, state: State):
+        upcoming_id = state.get("upcoming_thread_id")
+        buffer = state.get("bio_extraction_buffer")
+        threshold = self.config.get("BIO_CONFIG", {}).get("extraction_token_threshold", 512)
+        
+        if not buffer or not buffer.get("queries"):
+            return "skip_bio_extraction"
+
+        # 대화창이 바뀌었을 경우
+        is_new_thread = upcoming_id and upcoming_id != self.current_thread_id
+        
+        # 버퍼에 쌓인 토큰 수가 임계치 이상일 경우
+        is_threshold_met = buffer.get("token_count", 0) >= threshold
+
+        if is_new_thread:
+            self.current_thread_id = upcoming_id # ID 업데이트
+            print("대화창이 변경되어 Bio 추출을 시작합니다.")
+            return "extract_bio"
+            
+        if is_threshold_met:
+            print("버퍼에 쌓인 토큰 수가 임계치를 초과하여 Bio 추출을 시작합니다.")
+            return "extract_bio"
+
+        return "skip_bio_extraction"
 
     def bio_extract_and_save_bio_memory(self, state:State):
         start = time.time()
+
+        self.kv_cache_snapshot = self.llm.save_state() # KV 캐시 스냅샷 저장
+        print("Bio Memory 실행 전, 현재 대화 KV 캐시 스냅샷이 저장되었습니다.")
+
         bio_extraction_prompt = self.config["BIO_EXTRACTION_PROMPT"]
-        trimmed_messages = self.trimmer.invoke([SystemMessage(bio_extraction_prompt)] + [state["query"]])
+        buffer_messages = [HumanMessage(content=q) for q in state["bio_extraction_buffer"]["queries"]]
+
+        trimmed_messages = self.trimmer.invoke([SystemMessage(bio_extraction_prompt)] + buffer_messages)
 
         openai_formatted_trimmed_messages = convert_to_openai_messages(trimmed_messages)
 
@@ -889,6 +971,8 @@ class ChatAgent:
             full_prompt = self.formatter(
                 messages = openai_formatted_trimmed_messages,
             ).prompt
+
+            pprint(full_prompt)
 
             response_data = self.llm.create_completion(
                 prompt = full_prompt,
@@ -924,11 +1008,23 @@ class ChatAgent:
             bio_list = parse_bio_with_importance(response.content)
             if bio_list:
                 self.bio_metadata.save_or_update_bio(bio_list)
+
         end = time.time()
 
         print(f"extract_and_save_bio_memory 실행 시간: {end - start:.5f}초")
 
-        return 
+        return {
+            "variables": state["variables"],
+            "system_prompt": state["system_prompt"],
+            "branch_name": state["branch_name"],
+            #"classifier_result": state["classifier_result"],
+            "messages": state["messages"],
+            "tools_result": state["tools_result"],
+            "bio_result": state["bio_result"],
+            "bio_extraction_buffer": None,
+            "query": state["query"],
+            "final_answer": None
+        }
 
     # branch name: fusion
 
@@ -1300,6 +1396,7 @@ class ChatAgent:
         # branch name: bio
         workflow.add_node("bio_generate", self.bio_generate)
         workflow.add_node("bio_retrieve_bio_memory", self.bio_retrieve_bio_memory)
+        #workflow.add_node("bio_check_for_bio_extraction", self.bio_check_for_bio_extraction)
         workflow.add_node("bio_extract_and_save_bio_memory", self.bio_extract_and_save_bio_memory)
         # branch name: fusion
         workflow.add_node("fusion_check_thinking", self.fusion_check_thinking)
@@ -1326,7 +1423,7 @@ class ChatAgent:
         workflow.add_edge("classifier_generate", END)
         # branch name: bio
         workflow.add_edge("bio_retrieve_bio_memory", "bio_generate")
-        workflow.add_edge("bio_generate", "bio_extract_and_save_bio_memory")
+        workflow.add_conditional_edges("bio_generate", self.bio_check_for_bio_extraction, {"extract_bio": "bio_extract_and_save_bio_memory", "skip_bio_extraction": END})
         workflow.add_edge("bio_extract_and_save_bio_memory", END)
         # branch name: fusion
         workflow.add_edge("fusion_check_thinking", "fusion_retrieve_bio_memory")
