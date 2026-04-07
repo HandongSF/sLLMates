@@ -189,6 +189,7 @@ def create_simple_ui(agent: ChatAgent):
         if not text:
             return ""
 
+        # 완성된 <think>...</think> 제거
         remove_think_text = re.sub(r"<think>.*?</think>", "", text, flags=re.S)
 
         return remove_think_text.strip()
@@ -208,11 +209,6 @@ def create_simple_ui(agent: ChatAgent):
             yield history, ""
             return
     
-        if message.lower().strip() in ["exit", "q", "끝"]:
-            history.append([message, "대화를 종료합니다."])
-            yield history, ""
-            return
-    
         # 초기 표시
         history.append([message, "💭 처리 중..."])
         yield history, ""
@@ -221,45 +217,58 @@ def create_simple_ui(agent: ChatAgent):
     
         try:
             input_messages = HumanMessage(content=message)
-            partial_response = ""
+            all_text = ""
+            display_text = ""
+            is_intercepted = False
     
-            # LangChain streaming
-            for step in agent.app.stream(
+            for mode, step in agent.app.stream(
                 {
                     "variables": agent.config.get("VARIABLES", {}),
                     "system_prompt": agent.config.get("SYSTEM_PROMPT", ""),
-                    "branch_name": "fusion", # 현재는 branch 이름을 수동으로 수정해서 사용할 branch를 변경해야 함
+                    "branch_name": "stream", # 현재는 branch 이름을 수동으로 수정해서 사용할 branch를 변경해야 함
+                    "classifier_result": None,
+                    "messages": None,
+                    "tools_result": None,
+                    "bio_result": None,
                     "query": input_messages,
                     "final_answer": None
                 },
                 config=config,
-                stream_mode="values",
+                stream_mode=["values", "custom"],
             ):
-                if step.get("branch_name") == "classifier":
-                    if "classifier_result" in step:
-                        mode = step["classifier_result"]
+                if mode == "values":
+                    # print("values 모드 실행")
+                    # print(f">>> {step}")
+                    raw_text = step["final_answer"]
 
-                        if mode == "Thinking":
-                            history[-1][1] = "🧠 Thinking 모드 사용중..."
-                        else:
-                            history[-1][1] = "⚡ Non-thinking 모드 사용중..."
-
+                    if hasattr(raw_text, "content"):
+                        raw_text = raw_text.content
+                        display_text += remove_think(raw_text)
+                        history[-1][1] = display_text
                         yield history, ""
 
-                if "final_answer" in step and step["final_answer"]:
-                    text_piece = (
-                        step["final_answer"].content
-                        if hasattr(step["final_answer"], "content")
-                        else str(step["final_answer"])
-                    )
+                if mode == "custom":
+                    # print("custom 모드 실행")
+                    # print(f">>> {step}")
+                    if "final_answer" in step and step["final_answer"] is not None:
+                        raw_text = step["final_answer"]
 
-                    display_text = remove_think(text_piece)
-
-                    # 🔤 한 글자씩 표시
-                    for ch in display_text:
-                        partial_response += ch
-                        history[-1][1] = partial_response
-                        yield history, ""
+                        if "<think>" in raw_text:
+                            history[-1][1] = "Thinking 모드 사용중..."
+                            is_intercepted = True
+                            yield history, ""
+                        elif "</think>" in raw_text:
+                            is_intercepted = False
+                        elif "<tool_call>" in raw_text:
+                            is_intercepted = True
+                            history[-1][1] = "도구를 사용하고 있습니다..."
+                            yield history, ""
+                        elif "</tool_call>" in raw_text:
+                            is_intercepted = False
+                        elif not is_intercepted:
+                            display_text += raw_text
+                            history[-1][1] = display_text
+                            yield history, ""
     
             update_chat_metadata(thread_id)
     
