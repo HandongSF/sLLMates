@@ -21,6 +21,7 @@ from langchain_core.messages import ToolMessage
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import START, StateGraph, END
 from langgraph.prebuilt import ToolNode
+from langgraph.types import StreamWriter
 from langgraph.graph.message import add_messages
 from langchain_core.messages import trim_messages
 from langchain_community.chat_models import ChatLlamaCpp
@@ -941,7 +942,7 @@ class ChatAgent:
 
         id2label = {0: "Non-thinking", 1: "Thinking"}
 
-        print(">>>query: " + state["query"].content)
+        # print(">>>query: " + state["query"].content)
 
         raw_tokens = self.classifier_tokenizer.encode(state["query"].content, add_special_tokens=False)
 
@@ -965,19 +966,13 @@ class ChatAgent:
 
         label_name = id2label.get(predicted_class_id, f"LABEL_{predicted_class_id}")
 
-        print(">>Label_name: " + label_name)
+        # print("classifier_result = " + label_name)
 
         return {
-            "variables": state["variables"],
-            "system_prompt": state["system_prompt"],
-            "branch_name": label_name,
-            "messages": None,
-            "tools_result": None,
-            "query": state["query"],
-            "final_answer": None
+            "classifier_result": label_name,
         }
 
-    def stream_query_or_respond(self, state: State):
+    def stream_query_or_respond(self, state: State, writer: StreamWriter):
         filled_system_prompt = state["system_prompt"].format(**state["variables"])
 
         conversation_messages = [
@@ -1000,11 +995,11 @@ class ChatAgent:
                 tools = openai_formatted_tools,
             ).prompt
 
-            if state["branch_name"] == "Non-thinking":
+            if state["classifier_result"] == "Non-thinking":
                 full_prompt += '<think>\n\n</think>\n\n'
 
-            print(full_prompt)
-            print('\n\n\n\n')
+            # print(full_prompt)
+            # print('\n\n\n\n')
 
             response_generator = self.llm.create_completion(
                 prompt = full_prompt,
@@ -1019,13 +1014,15 @@ class ChatAgent:
 
             text_output = ""
             for chunk in response_generator:
+                # print("stream_query_or_respond: 토큰 생성 중...")
                 token = chunk['choices'][0]['text']
                 text_output += token
-                yield {"final_answer": token}
+                writer({"final_answer": token})
+                #yield {"final_answer": token}
 
-            print("text_output >>>")
-            pprint(text_output)
-            print('\n\n\n\n')
+            # print("text_output >>>")
+            # pprint(text_output)
+            # print('\n\n\n\n')
         else:
             print("formatter = None")
 
@@ -1043,45 +1040,33 @@ class ChatAgent:
 
             text_output = ""
             for chunk in response_generator:
+                # print("stream_query_or_respond: 토큰 생성 중...")
                 token = chunk['choices'][0]['message']['content']
                 text_output += token
-                yield {"final_answer": token}
+                writer({"final_answer": token})
+                #yield {"final_answer": token}
 
-            print("text_output >>>")
-            pprint(text_output)
-            print('\n\n\n\n')
+            # print("text_output >>>")
+            # pprint(text_output)
+            # print('\n\n\n\n')
 
         response = parse_llm_output(text_output)
 
-        print("response >>>")
-        pprint(response)
-        print('\n\n\n\n')
+        # print("response >>>")
+        # pprint(response)
+        # print('\n\n\n\n')
  
         if response.tool_calls:
-            yield {
-                "variables": state["variables"],
-                "system_prompt": state["system_prompt"],
-                "branch_name": state["branch_name"],
+            return {
                 "messages": [response],
-                "tools_result": None,
-                "query": state["query"],
-                "final_answer": None
             }
-            return
         
         add_messages = [state["query"]] + [response]
 
-        yield {
-            "variables": state["variables"],
-            "system_prompt": state["system_prompt"],
+        return {
             "history": add_messages,
-            "branch_name": state["branch_name"],
-            "messages": None,
-            "tools_result": None,
-            "query": state["query"],
             #"final_answer": response
         }
-        return
 
     def stream_check_for_tools(self, state: State):
         if state.get("messages"):
@@ -1093,16 +1078,10 @@ class ChatAgent:
         tools_result = self.tools.invoke(state["messages"])
 
         return {
-            "variables": state["variables"],
-            "system_prompt": state["system_prompt"],
-            "branch_name": state["branch_name"],
-            "messages": state["messages"],
             "tools_result": tools_result,
-            "query": state["query"],
-            "final_answer": None
         }
 
-    def stream_generate(self, state: State):
+    def stream_generate(self, state: State, writer: StreamWriter):
         filled_system_prompt = state["system_prompt"].format(**state["variables"])
 
         conversation_messages = [
@@ -1115,17 +1094,18 @@ class ChatAgent:
 
         openai_formatted_trimmed_messages = convert_to_openai_messages(trimmed_messages)
 
-        pprint(openai_formatted_trimmed_messages)
+        # pprint(openai_formatted_trimmed_messages)
 
         if self.formatter:
             full_prompt = self.formatter(
                 messages = openai_formatted_trimmed_messages,
             ).prompt
 
-            if state["branch_name"] == "Non-thinking":
+            if state["classifier_result"] == "Non-thinking":
                 full_prompt += '<think>\n\n</think>\n\n'
 
-            print(full_prompt)
+            # print(full_prompt)
+            # print('\n\n\n\n')
 
             response_generator = self.llm.create_completion(
                 prompt = full_prompt,
@@ -1140,13 +1120,15 @@ class ChatAgent:
 
             text_output = ""
             for chunk in response_generator:
+                # print("stream_generate: 토큰 생성 중...")
                 token = chunk['choices'][0]['text']
                 text_output += token
-                yield {"final_answer": token}
+                writer({"final_answer": token})
+                #yield {"final_answer": token}
 
-            print("text_output >>>")
-            pprint(text_output)
-            print('\n\n\n\n')
+            # print("text_output >>>")
+            # pprint(text_output)
+            # print('\n\n\n\n')
         else:
             print("formatter = None")
 
@@ -1163,33 +1145,28 @@ class ChatAgent:
 
             text_output = ""
             for chunk in response_generator:
+                # print("stream_generate: 토큰 생성 중...")
                 token = chunk['choices'][0]['message']['content']
                 text_output += token
-                yield {"final_answer": token}
+                writer({"final_answer": token})
+                #yield {"final_answer": token}
 
-            print("text_output >>>")
-            pprint(text_output)
-            print('\n\n\n\n')
+            # print("text_output >>>")
+            # pprint(text_output)
+            # print('\n\n\n\n')
         
         response = parse_llm_output(text_output)
 
-        print("response >>>")
-        pprint(response)
-        print('\n\n\n\n')
+        # print("response >>>")
+        # pprint(response)
+        # print('\n\n\n\n')
 
         add_messages = [state["query"]] + state["messages"] + state["tools_result"] + [response]
 
-        yield {
-            "variables": state["variables"],
-            "system_prompt": state["system_prompt"],
+        return {
             "history": add_messages,
-            "branch_name": state["branch_name"],
-            "messages": state["messages"],
-            "tools_result": state["tools_result"],
-            "query": state["query"],
             #"final_answer": response
         }
-        return
 
     # branch name: fusion
 
