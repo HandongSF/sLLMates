@@ -6,7 +6,7 @@ from datetime import datetime
 import importlib
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
-from typing import Sequence, Dict, List, Optional, Tuple, Annotated
+from typing import Sequence, Dict, List, Optional, Tuple, Annotated, Union
 from typing_extensions import Annotated, TypedDict
 from llama_cpp import Llama
 from llama_cpp.llama_chat_format import Jinja2ChatFormatter
@@ -21,6 +21,7 @@ from langchain_core.messages import ToolMessage
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import START, StateGraph, END
 from langgraph.prebuilt import ToolNode
+from langgraph.types import StreamWriter
 from langgraph.graph.message import add_messages
 from langchain_core.messages import trim_messages
 from langchain_community.chat_models import ChatLlamaCpp
@@ -70,7 +71,7 @@ class State(TypedDict):
     query: HumanMessage
     """현재 사용자 입력"""
 
-    final_answer: Optional[AIMessage]
+    final_answer: Optional[Union[AIMessage, str]]
     """최종 LLM 응답"""
 
 class ChatAgent:
@@ -286,6 +287,8 @@ class ChatAgent:
             return "classifier"
         elif state.get("branch_name") == "bio":
             return "bio"
+        elif state.get("branch_name") == "stream":
+            return "stream"
         elif state.get("branch_name") == "fusion":
             return "fusion"
         else:
@@ -929,6 +932,241 @@ class ChatAgent:
         print(f"extract_and_save_bio_memory 실행 시간: {end - start:.5f}초")
 
         return 
+    
+    # branch name: stream
+
+    def stream_check_thinking(self, state: State):
+        if self.classifier_tokenizer == None or self.classifier_llm == None:
+            print("에러: classifier_tokenizer 또는 classifier_llm 없음")
+            sys.exit(1)
+
+        id2label = {0: "Non-thinking", 1: "Thinking"}
+
+        # print(">>>query: " + state["query"].content)
+
+        raw_tokens = self.classifier_tokenizer.encode(state["query"].content, add_special_tokens=False)
+
+        if len(raw_tokens) > 510:
+            print(f"Query가 너무 길어 512 토큰에 맞게 자르기 시행 ({len(raw_tokens)} -> 510)")
+            raw_tokens = raw_tokens[:128] + raw_tokens[-382:]
+
+        input_ids = [self.classifier_tokenizer.cls_token_id] + raw_tokens + [self.classifier_tokenizer.sep_token_id]
+
+        inputs = {
+            "input_ids": torch.tensor([input_ids]).to(self.classifier_llm.device),
+            "attention_mask": torch.ones((1, len(input_ids))).to(self.classifier_llm.device)
+        }
+
+        with torch.no_grad():
+            outputs = self.classifier_llm(**inputs)
+    
+        logits = outputs.logits
+        probabilities = torch.nn.functional.softmax(logits, dim=-1)
+        predicted_class_id = torch.argmax(probabilities, dim=-1).item()
+
+        label_name = id2label.get(predicted_class_id, f"LABEL_{predicted_class_id}")
+
+        # print("classifier_result = " + label_name)
+
+        return {
+            "classifier_result": label_name,
+        }
+
+    def stream_query_or_respond(self, state: State, writer: StreamWriter):
+        filled_system_prompt = state["system_prompt"].format(**state["variables"])
+
+        conversation_messages = [
+            message
+            for message in state["history"]
+            if message.type in ("human") or (message.type == "ai" and not message.tool_calls)
+        ]
+
+        trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + [state["query"]])
+
+        openai_formatted_trimmed_messages = convert_to_openai_messages(trimmed_messages)
+
+        openai_formatted_tools = [convert_to_openai_tool(tool) for tool in self.tool_list]
+
+        #pprint(openai_formatted_trimmed_messages)
+
+        if self.formatter:            
+            full_prompt = self.formatter(
+                messages = openai_formatted_trimmed_messages,
+                tools = openai_formatted_tools,
+            ).prompt
+
+            if state["classifier_result"] == "Non-thinking":
+                full_prompt += '<think>\n\n</think>\n\n'
+
+            # print(full_prompt)
+            # print('\n\n\n\n')
+
+            response_generator = self.llm.create_completion(
+                prompt = full_prompt,
+                max_tokens = self.config["CHAT_MODEL_CONFIG"].get("max_tokens", 16),
+                temperature = self.config["CHAT_MODEL_CONFIG"].get("temperature", 0.8),
+                top_p = self.config["CHAT_MODEL_CONFIG"].get("top_p", 0.95),
+                min_p = self.config["CHAT_MODEL_CONFIG"].get("min_p", 0.05),
+                stop = self.config["CHAT_MODEL_CONFIG"].get("stop", []),
+                top_k = self.config["CHAT_MODEL_CONFIG"].get("top_k", 40),   
+                stream = True, 
+            )
+
+            text_output = ""
+            for chunk in response_generator:
+                # print("stream_query_or_respond: 토큰 생성 중...")
+                token = chunk['choices'][0]['text']
+                text_output += token
+                writer({"final_answer": token})
+                #yield {"final_answer": token}
+
+            # print("text_output >>>")
+            # pprint(text_output)
+            # print('\n\n\n\n')
+        else:
+            print("formatter = None")
+
+            response_generator = self.llm.create_chat_completion(
+                messages = openai_formatted_trimmed_messages,
+                tools = openai_formatted_tools,
+                max_tokens = self.config["CHAT_MODEL_CONFIG"].get("max_tokens", 16),
+                temperature = self.config["CHAT_MODEL_CONFIG"].get("temperature", 0.8),
+                top_p = self.config["CHAT_MODEL_CONFIG"].get("top_p", 0.95),
+                min_p = self.config["CHAT_MODEL_CONFIG"].get("min_p", 0.05),
+                stop = self.config["CHAT_MODEL_CONFIG"].get("stop", []),
+                top_k = self.config["CHAT_MODEL_CONFIG"].get("top_k", 40),  
+                stream = True, 
+            )
+
+            text_output = ""
+            for chunk in response_generator:
+                # print("stream_query_or_respond: 토큰 생성 중...")
+                token = chunk['choices'][0]['message']['content']
+                text_output += token
+                writer({"final_answer": token})
+                #yield {"final_answer": token}
+
+            # print("text_output >>>")
+            # pprint(text_output)
+            # print('\n\n\n\n')
+
+        response = parse_llm_output(text_output)
+
+        # print("response >>>")
+        # pprint(response)
+        # print('\n\n\n\n')
+ 
+        if response.tool_calls:
+            return {
+                "messages": [response],
+            }
+        
+        add_messages = [state["query"]] + [response]
+
+        return {
+            "history": add_messages,
+            #"final_answer": response
+        }
+
+    def stream_check_for_tools(self, state: State):
+        if state.get("messages"):
+            return "tools"
+        else:
+            return "no_tool"
+
+    def stream_run_tools_and_pass_through_state(self, state: State):
+        tools_result = self.tools.invoke(state["messages"])
+
+        return {
+            "tools_result": tools_result,
+        }
+
+    def stream_generate(self, state: State, writer: StreamWriter):
+        filled_system_prompt = state["system_prompt"].format(**state["variables"])
+
+        conversation_messages = [
+            message
+            for message in state["history"]
+            if message.type in ("human") or (message.type == "ai" and not message.tool_calls)
+        ]
+
+        trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + state["tools_result"] + [state["query"]])
+
+        openai_formatted_trimmed_messages = convert_to_openai_messages(trimmed_messages)
+
+        # pprint(openai_formatted_trimmed_messages)
+
+        if self.formatter:
+            full_prompt = self.formatter(
+                messages = openai_formatted_trimmed_messages,
+            ).prompt
+
+            if state["classifier_result"] == "Non-thinking":
+                full_prompt += '<think>\n\n</think>\n\n'
+
+            # print(full_prompt)
+            # print('\n\n\n\n')
+
+            response_generator = self.llm.create_completion(
+                prompt = full_prompt,
+                max_tokens = self.config["CHAT_MODEL_CONFIG"].get("max_tokens", 16),
+                temperature = self.config["CHAT_MODEL_CONFIG"].get("temperature", 0.8),
+                top_p = self.config["CHAT_MODEL_CONFIG"].get("top_p", 0.95),
+                min_p = self.config["CHAT_MODEL_CONFIG"].get("min_p", 0.05),
+                stop = self.config["CHAT_MODEL_CONFIG"].get("stop", []),
+                top_k = self.config["CHAT_MODEL_CONFIG"].get("top_k", 40),   
+                stream = True,  
+            )
+
+            text_output = ""
+            for chunk in response_generator:
+                # print("stream_generate: 토큰 생성 중...")
+                token = chunk['choices'][0]['text']
+                text_output += token
+                writer({"final_answer": token})
+                #yield {"final_answer": token}
+
+            # print("text_output >>>")
+            # pprint(text_output)
+            # print('\n\n\n\n')
+        else:
+            print("formatter = None")
+
+            response_generator = self.llm.create_chat_completion(
+                messages = openai_formatted_trimmed_messages,
+                max_tokens = self.config["CHAT_MODEL_CONFIG"].get("max_tokens", 16),
+                temperature = self.config["CHAT_MODEL_CONFIG"].get("temperature", 0.8),
+                top_p = self.config["CHAT_MODEL_CONFIG"].get("top_p", 0.95),
+                min_p = self.config["CHAT_MODEL_CONFIG"].get("min_p", 0.05),
+                stop = self.config["CHAT_MODEL_CONFIG"].get("stop", []),
+                top_k = self.config["CHAT_MODEL_CONFIG"].get("top_k", 40),  
+                stream = True, 
+            )
+
+            text_output = ""
+            for chunk in response_generator:
+                # print("stream_generate: 토큰 생성 중...")
+                token = chunk['choices'][0]['message']['content']
+                text_output += token
+                writer({"final_answer": token})
+                #yield {"final_answer": token}
+
+            # print("text_output >>>")
+            # pprint(text_output)
+            # print('\n\n\n\n')
+        
+        response = parse_llm_output(text_output)
+
+        # print("response >>>")
+        # pprint(response)
+        # print('\n\n\n\n')
+
+        add_messages = [state["query"]] + state["messages"] + state["tools_result"] + [response]
+
+        return {
+            "history": add_messages,
+            #"final_answer": response
+        }
 
     # branch name: fusion
 
@@ -1301,6 +1539,12 @@ class ChatAgent:
         workflow.add_node("bio_generate", self.bio_generate)
         workflow.add_node("bio_retrieve_bio_memory", self.bio_retrieve_bio_memory)
         workflow.add_node("bio_extract_and_save_bio_memory", self.bio_extract_and_save_bio_memory)
+        # branch name: stream
+        workflow.add_node("stream_check_thinking", self.stream_check_thinking)
+        workflow.add_node("stream_query_or_respond", self.stream_query_or_respond)
+        workflow.add_node("stream_check_for_tools", self.stream_check_for_tools)
+        workflow.add_node("stream_run_tools_and_pass_through_state", self.stream_run_tools_and_pass_through_state)
+        workflow.add_node("stream_generate", self.stream_generate)
         # branch name: fusion
         workflow.add_node("fusion_check_thinking", self.fusion_check_thinking)
         workflow.add_node("fusion_retrieve_bio_memory", self.fusion_retrieve_bio_memory)
@@ -1312,7 +1556,7 @@ class ChatAgent:
 
         # 노드 연결
         # 시작
-        workflow.add_conditional_edges(START, self.router, {"default": "default_generate", "tools": "tools_query_or_respond", "classifier": "classifier_check_thinking", "bio": "bio_retrieve_bio_memory", "fusion": "fusion_check_thinking"})
+        workflow.add_conditional_edges(START, self.router, {"default": "default_generate", "tools": "tools_query_or_respond", "classifier": "classifier_check_thinking", "bio": "bio_retrieve_bio_memory", "stream": "stream_check_thinking", "fusion": "fusion_check_thinking"})
         # branch name: default
         workflow.add_edge("default_generate", END)
         # branch name: tools
@@ -1328,6 +1572,11 @@ class ChatAgent:
         workflow.add_edge("bio_retrieve_bio_memory", "bio_generate")
         workflow.add_edge("bio_generate", "bio_extract_and_save_bio_memory")
         workflow.add_edge("bio_extract_and_save_bio_memory", END)
+        # branch name: stream
+        workflow.add_edge("stream_check_thinking", "stream_query_or_respond")
+        workflow.add_conditional_edges("stream_query_or_respond", self.stream_check_for_tools, {"no_tool": END, "tools": "stream_run_tools_and_pass_through_state"})
+        workflow.add_edge("stream_run_tools_and_pass_through_state", "stream_generate")
+        workflow.add_edge("stream_generate", END)
         # branch name: fusion
         workflow.add_edge("fusion_check_thinking", "fusion_retrieve_bio_memory")
         workflow.add_edge("fusion_retrieve_bio_memory", "fusion_query_or_respond")
