@@ -1,0 +1,200 @@
+set_id,question,expected_answer,model_answer,result
+SET_01,사용자는 아침에 사과 한 개를 다 먹나요?,No,No,correct
+SET_01,고양이 루나가 좋아하는 간식은 북어 트릿인가요?,Yes,No,wrong
+SET_01,사용자의 전공은 인공지능 공학인가요?,Yes,No,wrong
+SET_01,사용자는 밤늦게 일반 커피를 마셔도 괜찮나요?,No,No,correct
+SET_01,요가 수업은 목요일 저녁에 있나요?,No,No,correct
+SET_01,사용자는 자기계발서보다 소설을 좋아하나요?,No,No,correct
+SET_01,사용자는 겨울보다 여름을 선호하나요?,No,No,correct
+SET_01,갤럭시를 쓰는 이유 중 하나는 통화 녹음인가요?,Yes,No,wrong
+SET_01,사용자는 우디한 향수를 선호하나요?,No,No,correct
+SET_01,내년에 독일 교환학생을 계획 중인가요?,Yes,No,wrong
+SET_02,사용자는 빵 굽기 중 바게트를 특히 좋아하나요?,No,No,correct
+SET_02,사용자는 글루텐 과민 반응이 있나요?,Yes,No,wrong
+SET_02,사용자는 독서 모임보다 혼자 읽는 것을 선호하나요?,Yes,No,wrong
+SET_02,출퇴근 시 음악을 주로 듣나요?,No,No,correct
+SET_02,사용자는 현재도 꾸준히 그림을 그리나요?,No,No,correct
+SET_02,사용자는 해외여행을 국내 카페 투어보다 좋아하나요?,No,No,correct
+SET_02,독서 다이어리 정리는 매달 1일에 하나요?,Yes,No,wrong
+SET_02,사용자는 SNS를 전혀 안 하나요?,No,No,correct
+SET_02,사용자에게 고양이 알레르기가 있나요?,Yes,No,wrong
+SET_02,사용자는 초등학교 교사인가요?,Yes,No,wrong
+SET_03,사용자의 골프 핸디캡은 20인가요?,No,No,correct
+SET_03,사용자는 레드 와인을 화이트 와인보다 선호하나요?,No,No,correct
+SET_03,사용자는 매주 수요일 팀 미팅을 하나요?,No,No,correct
+SET_03,사용자는 아메리카노를 주로 마시나요?,Yes,No,wrong
+SET_03,사용자는 현재 헬스장을 꾸준히 다니고 있나요?,No,No,correct
+SET_03,사용자의 팀원 수는 13명인가요?,Yes,No,wrong
+SET_03,사용자는 넷플릭스를 유튜브보다 더 많이 보나요?,No,No,correct
+SET_03,출장 빈도는 한 달에 두 번 정도인가요?,Yes,No,wrong
+SET_03,사용자는 점심을 혼자 먹는 걸 편하게 여기나요?,Yes,No,wrong
+SET_03,사용자는 맥북 프로를 사용하나요?,Yes,No,wrong
+SET_04,사용자는 주로 오전에 작업을 하나요?,No,No,correct
+SET_04,사용자는 유제품을 먹는 채식주의자인가요?,No,No,correct
+SET_04,작업 툴로 포토샵을 쓰나요?,No,No,correct
+SET_04,최애 애니메이션은 원령공주인가요?,Yes,No,wrong
+SET_04,사용자는 오프라인 미팅을 선호하나요?,No,No,correct
+SET_04,작업 시 재즈 음악을 듣나요?,No,No,correct
+SET_04,사용자는 우유 베이스 커피를 마시나요?,No,No,correct
+SET_04,인스타그램 팔로워가 1만 명 이상인가요?,Yes,No,wrong
+SET_04,매달 디지털 디톡스 주말을 갖나요?,Yes,No,wrong
+SET_04,사용자는 TV 대신 빔 프로젝터를 사용하나요?,Yes,No,wrong
+SET_05,사용자는 새벽 5시에 기상하나요?,No,No,correct
+SET_05,손자는 올해 초등학교 1학년인가요?,Yes,No,wrong
+SET_05,사용자는 고려시대 역사를 가장 좋아하나요?,No,No,correct
+SET_05,군 생활은 30년 했나요?,Yes,No,wrong
+SET_05,사용자는 소주를 막걸리보다 선호하나요?,No,No,correct
+SET_05,텃밭에서 고추와 깻잎을 기르고 있나요?,Yes,No,wrong
+SET_05,사용자는 스마트폰을 능숙하게 다루나요?,No,No,correct
+SET_05,운동은 주 2회 근력 운동인가요?,Yes,No,wrong
+SET_05,사용자는 백미밥을 선호하나요?,No,No,correct
+SET_05,월요일에는 술을 마시지 않나요?,Yes,No,wrong
+SET_06,사용자는 아침에 출근해서 저녁에 퇴근하나요?,No,No,correct
+SET_06,퇴근 후 먹는 루틴 음식은 요거트와 그래놀라인가요?,Yes,No,wrong
+SET_06,사용자는 액션 드라마를 좋아하나요?,No,No,correct
+SET_06,병원에서 크록스를 신는 이유는 편하기 때문인가요?,Yes,No,wrong
+SET_06,사용자는 수면 보조제를 복용하나요?,No,No,correct
+SET_06,강아지 이름은 '콩'과 '팥'인가요?,Yes,No,wrong
+SET_06,사용자는 아메리카노를 즐겨 마시나요?,No,No,correct
+SET_06,월급의 절반을 저축하나요?,No,No,correct
+SET_06,운동은 퇴근 직후 달리기를 하나요?,Yes,No,wrong
+SET_06,스트레스 해소법은 ASMR 시청인가요?,Yes,No,wrong
+SET_07,창업한 지 2년이 넘었나요?,No,No,correct
+SET_07,하루 아메리카노 소비가 4잔 이상인가요?,Yes,No,wrong
+SET_07,사무실이 있는 회사인가요?,No,No,correct
+SET_07,팀원은 총 5명인가요?,Yes,No,wrong
+SET_07,사용자는 수면 시간이 7시간 이상인가요?,No,No,correct
+SET_07,매일 다양한 스타일의 옷을 입나요?,No,No,correct
+SET_07,운동을 위해 헬스장을 다니나요?,No,No,correct
+SET_07,식사를 집에서 직접 해먹는 날이 많나요?,No,No,correct
+SET_07,투자자 미팅 장소는 주로 판교인가요?,Yes,No,wrong
+SET_07,독서 취향은 자기계발·비즈니스 서적인가요?,Yes,No,wrong
+SET_08,사용자는 마트를 재래시장보다 선호하나요?,No,No,correct
+SET_08,베란다 화분이 20개 이상인가요?,Yes,No,wrong
+SET_08,자녀가 모두 초등학생인가요?,No,No,correct
+SET_08,배달 음식을 자주 시켜 먹나요?,No,No,correct
+SET_08,TV로 드라마를 즐겨 보나요?,No,No,correct
+SET_08,냉장고 정리는 매주 일요일에 하나요?,Yes,No,wrong
+SET_08,사용자는 문자를 전화보다 선호하나요?,No,No,correct
+SET_08,아침 루틴 중 화분에 물 주는 일이 포함되나요?,Yes,No,wrong
+SET_08,허브류 식물을 주로 키우나요?,Yes,No,wrong
+SET_08,사용자는 할인 쿠폰을 꼼꼼히 챙기나요?,Yes,No,wrong
+SET_09,주 종목은 배틀그라운드인가요?,No,No,correct
+SET_09,트위치 구독자는 3만 명 수준인가요?,Yes,No,wrong
+SET_09,평균 수면 시간이 7시간 이상인가요?,No,No,correct
+SET_09,에너지 드링크를 하루 두 캔 마시나요?,Yes,No,wrong
+SET_09,스트리밍 시작 시간은 밤 9시인가요?,Yes,No,wrong
+SET_09,게임 마우스로 레이저 제품을 쓰나요?,No,No,correct
+SET_09,팬미팅은 반기별로 진행하나요?,No,No,correct
+SET_09,수익의 절반 가까이가 후원금인가요?,Yes,No,wrong
+SET_09,작년 오프라인 대회에서 4강까지 갔나요?,No,No,correct
+SET_09,스트리밍 중 먹는 음식은 치킨과 피자인가요?,Yes,No,wrong
+SET_10,사용자는 생선 알레르기가 있나요?,No,No,correct
+SET_10,필라테스 강사 자격증이 있나요?,Yes,No,wrong
+SET_10,매일 아침 영양제를 챙겨 먹나요?,No,No,correct
+SET_10,커피는 오전에만 마시나요?,Yes,No,wrong
+SET_10,일정 관리를 앱으로 하나요?,No,No,correct
+SET_10,여행 시 자연 경관보다 미술관을 선호하나요?,Yes,No,wrong
+SET_10,필라테스 경력이 4년인가요?,Yes,No,wrong
+SET_10,나트륨 함량을 식사 시 확인하나요?,Yes,No,wrong
+SET_10,필라테스 레슨은 주 3회인가요?,Yes,No,wrong
+SET_10,오메가3와 마그네슘을 복용하나요?,Yes,No,wrong
+SET_11,사용자는 2개 국어를 구사하나요?,No,No,correct
+SET_11,기내에서 수분크림을 꼭 사용하나요?,Yes,No,wrong
+SET_11,파운데이션은 쿠션 타입을 사용하나요?,No,No,correct
+SET_11,도쿄 노선을 가장 많이 비행하나요?,Yes,No,wrong
+SET_11,비번 날에도 힐을 신나요?,No,No,correct
+SET_11,기내에서 기내식을 잘 먹나요?,No,No,correct
+SET_11,오사카를 10번 이상 방문했나요?,Yes,No,wrong
+SET_11,숙박은 에어비앤비를 선호하나요?,No,No,correct
+SET_11,마사지는 분기별로 가나요?,No,No,correct
+SET_11,휴일에 패션 매거진을 읽나요?,Yes,No,wrong
+SET_12,사용자는 고혈압 환자인가요?,No,No,correct
+SET_12,클래식 음악 중 쇼팽을 특히 좋아하나요?,Yes,No,wrong
+SET_12,아침 걷기 시간은 30분인가요?,No,No,correct
+SET_12,고등학교 교사로 30년 근무했나요?,No,No,correctSET_12,병원 진료는 매달 두 번째 수요일인가요?,Yes,No,wrong
+SET_12,카카오톡 알림을 켜놓나요?,No,No,correct
+SET_12,텃밭에 배추를 기르나요?,No,No,correct
+SET_12,낮잠을 오후 2시 이후에 자나요?,Yes,No,wrong
+SET_12,좋아하는 시인이 윤동주인가요?,Yes,No,wrong
+SET_12,손주는 두 명인가요?,Yes,No,wrong
+SET_13,사용자는 싱글맘인가요?,Yes,No,wrong
+SET_13,딸은 초등학교 2학년인가요?,Yes,No,wrong
+SET_13,통계 분석에는 파이썬이 더 편하다고 하나요?,No,No,correct
+SET_13,보드게임 모임은 매주 참가하나요?,No,No,correct
+SET_13,어린이집 하원 픽업 시간은 6시인가요?,Yes,No,wrong
+SET_13,데이터 시각화는 Power BI를 쓰나요?,No,No,correct
+SET_13,커피는 아메리카노를 선호하나요?,No,No,correct
+SET_13,야근을 자주 하나요?,No,No,correct
+SET_13,주말 아침에 늦게 자는 편인가요?,Yes,No,wrong
+SET_13,주말에 딸과 요리 놀이를 하나요?,Yes,No,wrong
+SET_14,전역까지 8개월 남았나요?,Yes,No,wrong
+SET_14,외출 시 주로 쇼핑몰에 가나요?,No,No,correct
+SET_14,월급 일부만 저축하나요?,No,No,correct
+SET_14,최근에 니체 철학에 흥미가 생겼나요?,Yes,No,wrong
+SET_14,하루 달리기 거리는 5km인가요?,No,No,correct
+SET_14,스마트폰을 자유롭게 사용할 수 있나요?,No,No,correct
+SET_14,전역 후 공무원이 되고 싶어하나요?,No,No,correct
+SET_14,해산물을 좋아하나요?,Yes,No,wrong
+SET_14,외박 시 강아지와 시간을 보내나요?,Yes,No,wrong
+SET_14,가장 힘든 점은 수면 부족인가요?,Yes,No,wrong
+SET_15,좋아하는 재즈 뮤지션은 마일스 데이비스인가요?,Yes,No,wrong
+SET_15,주 3회 달리기를 하나요?,No),No,wrong
+SET_15,환자 상담 후 스트레칭을 하나요?,No,No,correct
+SET_15,정신건강의학과 경력이 15년인가요?,Yes,No,wrong
+SET_15,식사 중 스마트폰을 자주 보나요?,No,No,correct
+SET_15,커피는 하루 2잔 마시나요?,No,No,correct
+SET_15,여행 시 빡빡한 일정을 좋아하나요?,No,No,correct
+SET_15,자기 전 감사 일기를 쓰나요?,Yes,No,wrong
+SET_15,체중 관리는 러닝으로 하나요?,Yes,No,wrong
+SET_15,원두는 에티오피아산을 쓰나요?,Yes,No,wrong
+SET_16,사용자는 두유를 마시나요?,No,No,correct
+SET_16,카페 창업을 준비 중인가요?,Yes,No,wrong
+SET_16,필름 카메라로 캐논을 쓰나요?,No,No,correct
+SET_16,인스타그램 팔로워가 7천 명인가요?,Yes,No,wrong
+SET_16,음악은 록을 즐겨 듣나요?,No,No,correct
+SET_16,카페 인테리어는 모던 스타일로 계획 중인가요?,No,No,correct
+SET_16,고소공포증이 있나요?,Yes,No,wrong
+SET_16,바리스타 경력이 3년인가요?,Yes,No,wrong
+SET_16,퇴근 후 에스프레소를 마시는 루틴이 있나요?,Yes,No,wrong
+SET_16,에스프레소 머신은 ECM 브랜드를 선호하나요?,Yes,No,wrong
+SET_17,기상 시각이 새벽 4시 반인가요?,Yes,No,wrong
+SET_17,회사 직원 수가 120명인가요?,Yes,No,wrong
+SET_17,골프를 레저 목적으로 즐기나요?,No,No,correct
+SET_17,아침에 커피는 라떼를 마시나요?,No,No,correct
+SET_17,전략 회의는 월요일 오전에 있나요?,No,No,correct
+SET_17,스마트폰은 갤럭시를 사용하나요?,No,No,correct
+SET_17,주말 저녁 가족 식사는 철칙인가요?,Yes,No,wrong
+SET_17,해외 출장지는 주로 일본인가요?,No,No,correct
+SET_17,의사 결정 시 직관을 선호하나요?,No,No,correct
+SET_17,은퇴 후 농장을 운영하고 싶어하나요?,Yes,No,wrong
+SET_18,사용자는 완전한 비건인가요?,No,No,correct
+SET_18,요가 강사 경력이 7년인가요?,Yes,No,wrong
+SET_18,여행 시 대형 캐리어를 갖고 다니나요?,No,No,correct
+SET_18,명상은 하루에 두 번 하나요?,Yes,No,wrong
+SET_18,커피 대신 마테나 루이보스 티를 마시나요?,Yes,No,wrong
+SET_18,오후 9시 이후에도 폰을 켜놓나요?,No,No,correct
+SET_18,수업에서 라벤더 향 디퓨저를 사용하나요?,Yes,No,wrong
+SET_18,일회용품을 자주 사용하나요?,No,No,correct
+SET_18,묵언 명상 리트릿에 분기별로 참가하나요?,No,No,correct
+SET_18,음악은 힌두 만트라나 바이노럴 비트를 듣나요?,Yes,No,wrong
+SET_19,사용자는 초등학생인가요?,No,No,correct
+SET_19,사용자가 인공지능 대학원에 가려고 하나요?,Yes,No,wrong
+SET_19,사용자는 밤에 일찍 자는 편인가요?,No,No,correct
+SET_19,사용자는 음식 중 일식을 가장 좋아하나요?,No,No,correct
+SET_19,카페라떼가 사용자의 가장 좋아하는 음료인가요?,Yes,No,wrong
+SET_19,어렸을때 닭을 키운 적이 있나요?,Yes,No,wrong
+SET_19,요즘 편의점을 자주 가고 편의점 음식을 많이 먹나요?,Yes,No,wrong
+SET_19,사용자는 락 음악을 자주 듣는 편인가요?,No,No,correct
+SET_19,사용자는 한동대학교에 다니나요?,Yes,No,wrong
+SET_19,사용자는 매 주 일요일에 교회에 가나요?,Yes,No,wrong
+SET_20,사용자는 그림 그리는 걸 좋아하나요?,Yes,No,wrong
+SET_20,사용자는 컴퓨터공학 전공인가요?,No,No,correct
+SET_20,사용자는 홍익대학교 학생인가요?,Yes,No,wrong
+SET_20,사용자는 일찍자고 일찍 일어나는 편인가요?,No,No,correct
+SET_20,사용자는 카페인을 마시나요?,No,No,correct
+SET_20,사용자는 만화책 읽는 걸 좋아하나요?,Yes,No,wrong
+SET_20,사용자는 강아지를 키우고 있나요?,Yes,No,wrong
+SET_20,사용자는 재즈를 즐겨 듣나요?,Yes,No,wrong
+SET_20,사용자는 수업 듣는 걸 좋아하나요?,No,No,correct
+SET_20,사용자는 졸업 발표 준비로 바쁜가요?,Yes,No,wrong
