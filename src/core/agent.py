@@ -2012,14 +2012,7 @@ class ChatAgent:
         print(">>Label_name: " + label_name)
 
         return {
-            "variables": state["variables"],
-            "system_prompt": state["system_prompt"],
-            "branch_name": state["branch_name"],
             "classifier_result": label_name,
-            "messages": None,
-            "tools_result": None,
-            "query": state["query"],
-            "final_answer": None
         }
     
     def fusiontool_v2_retrieve_bio_memory(self, state: State):
@@ -2077,15 +2070,7 @@ class ChatAgent:
             bio_general_result = ""
 
         return {
-            "variables": state["variables"],
-            "system_prompt": state["system_prompt"],
-            "branch_name": state["branch_name"],
-            "classifier_result": state["classifier_result"],
-            "messages": None,
-            "tools_result": None,
             "bio_result": [bio_core_result, bio_general_result],
-            "query": state["query"],
-            "final_answer": None
         }
 
     def fusiontool_v2_query_or_respond(self, state: State):
@@ -2154,25 +2139,10 @@ class ChatAgent:
  
         if response.tool_calls:
             return {
-                "variables": state["variables"],
-                "system_prompt": state["system_prompt"],
-                "branch_name": state["branch_name"],
                 "messages": [response],
-                "tools_result": None,
-                "query": state["query"],
-                "final_answer": None
             }
 
-        return {
-            "variables": state["variables"],
-            "system_prompt": state["system_prompt"],
-            "branch_name": state["branch_name"],
-            "messages": None,
-            "tools_result": None,
-            "bio_result": state["bio_result"],
-            "query": state["query"],
-            "final_answer": None
-        }
+        return
 
     def fusiontool_v2_check_for_tools(self, state: State):
         if state.get("messages"):
@@ -2184,15 +2154,7 @@ class ChatAgent:
         tools_result = self.tools.invoke(state["messages"])
 
         return {
-            "variables": state["variables"],
-            "system_prompt": state["system_prompt"],
-            "branch_name": state["branch_name"],
-            "classifier_result": state["classifier_result"],
-            "messages": state["messages"],
             "tools_result": tools_result,
-            "bio_result": state["bio_result"],
-            "query": state["query"],
-            "final_answer": None
         }
 
     def fusiontool_v2_generate(self, state: State, writer: StreamWriter):
@@ -2297,16 +2259,7 @@ class ChatAgent:
         print(f"메인 답변 생성 실행 시간: {end_time_for_generate - start_time_for_generate:.5f}초")
 
         return {
-            "variables": state["variables"],
-            "system_prompt": state["system_prompt"],
             "history": add_messages,
-            "branch_name": state["branch_name"],
-            "classifier_result": state["classifier_result"],
-            "messages": state["messages"],
-            "tools_result": state["tools_result"],
-            "bio_result": state["bio_result"],
-            "query": state["query"],
-            "final_answer": response
         }
     
     def fusiontool_v2_check_for_bio_extraction(self, state: State):
@@ -2401,17 +2354,7 @@ class ChatAgent:
                 "query_count": 0
         }
 
-        return {
-            "variables": state["variables"],
-            "system_prompt": state["system_prompt"],
-            "branch_name": state["branch_name"],
-            "classifier_result": state["classifier_result"],
-            "messages": state["messages"],
-            "tools_result": state["tools_result"],
-            "bio_result": state["bio_result"],
-            "query": state["query"],
-            "final_answer": None
-        }
+        return
     
     # 그래프 생성 함수
 
