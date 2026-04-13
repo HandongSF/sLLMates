@@ -225,7 +225,7 @@ def create_simple_ui(agent: ChatAgent):
                 {
                     "variables": agent.config.get("VARIABLES", {}),
                     "system_prompt": agent.config.get("SYSTEM_PROMPT", ""),
-                    "branch_name": "bio", # 현재는 branch 이름을 수동으로 수정해서 사용할 branch를 변경해야 함
+                    "branch_name": "fusiontool_v2", # 현재는 branch 이름을 수동으로 수정해서 사용할 branch를 변경해야 함
                     "upcoming_thread_id": thread_id,
                     "classifier_result": None,
                     "messages": None,
@@ -238,15 +238,16 @@ def create_simple_ui(agent: ChatAgent):
                 stream_mode=["values", "custom"],
             ):
                 if mode == "values":
+                    continue  # 현재 values 모드는 내부 로직 처리용이므로 UI에서는 별도 처리하지 않음(query_and_respond)
                     # print("values 모드 실행")
                     # print(f">>> {step}")
-                    raw_text = step["final_answer"]
+                    # raw_text = step["final_answer"]
 
-                    if hasattr(raw_text, "content"):
-                        raw_text = raw_text.content
-                        display_text += remove_think(raw_text)
-                        history[-1][1] = display_text
-                        yield history, ""
+                    # if hasattr(raw_text, "content"):
+                    #     raw_text = raw_text.content
+                    #     display_text += remove_think(raw_text)
+                    #     history[-1][1] = display_text
+                    #     yield history, ""
 
                 if mode == "custom":
                     # print("custom 모드 실행")
