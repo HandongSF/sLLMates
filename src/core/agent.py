@@ -2089,9 +2089,9 @@ class ChatAgent:
         }
 
     def fusiontool_v2_query_or_respond(self, state: State):
-        filled_system_prompt = state["system_prompt"].format(**state["variables"]) + state["bio_result"][0]
+        filled_system_prompt = state["system_prompt"].format(**state["variables"])
 
-        trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + [ToolMessage(content=state["bio_result"][1], tool_call_id="temp")] + [state["query"]])
+        trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + [state["query"]])
 
         openai_formatted_trimmed_messages = convert_to_openai_messages(trimmed_messages)
 
@@ -2111,12 +2111,14 @@ class ChatAgent:
 
             response_data = self.llm.create_completion(
                 prompt = full_prompt,
-                max_tokens = self.config["CHAT_MODEL_CONFIG"].get("max_tokens", 16),
-                temperature = self.config["CHAT_MODEL_CONFIG"].get("temperature", 0.8),
-                top_p = self.config["CHAT_MODEL_CONFIG"].get("top_p", 0.95),
-                min_p = self.config["CHAT_MODEL_CONFIG"].get("min_p", 0.05),
-                stop = self.config["CHAT_MODEL_CONFIG"].get("stop", []),
-                top_k = self.config["CHAT_MODEL_CONFIG"].get("top_k", 40),    
+                max_tokens = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("max_tokens", 16),
+                temperature = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("temperature", 0.8),
+                top_p = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("top_p", 0.95),
+                min_p = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("min_p", 0.05),
+                stop = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("stop", []),
+                top_k = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("top_k", 40),
+                presence_penalty = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("presence_penalty", 0.3),
+                repeat_penalty = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("repeat_penalty", 1.05),
                 stream = False,
             )
 
@@ -2130,12 +2132,14 @@ class ChatAgent:
             response_data = self.llm.create_chat_completion(
                 messages = openai_formatted_trimmed_messages,
                 tools = openai_formatted_tools,
-                max_tokens = self.config["CHAT_MODEL_CONFIG"].get("max_tokens", 16),
-                temperature = self.config["CHAT_MODEL_CONFIG"].get("temperature", 0.8),
-                top_p = self.config["CHAT_MODEL_CONFIG"].get("top_p", 0.95),
-                min_p = self.config["CHAT_MODEL_CONFIG"].get("min_p", 0.05),
-                stop = self.config["CHAT_MODEL_CONFIG"].get("stop", []),
-                top_k = self.config["CHAT_MODEL_CONFIG"].get("top_k", 40),  
+                max_tokens = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("max_tokens", 16),
+                temperature = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("temperature", 0.8),
+                top_p = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("top_p", 0.95),
+                min_p = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("min_p", 0.05),
+                stop = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("stop", []),
+                top_k = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("top_k", 40),
+                presence_penalty = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("presence_penalty", 0.3),
+                repeat_penalty = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("repeat_penalty", 1.05),
                 stream = False,
             )
 
@@ -2193,7 +2197,14 @@ class ChatAgent:
 
     def fusiontool_v2_generate(self, state: State, writer: StreamWriter):
         start_time_for_generate = time.time()
-        filled_system_prompt = state["system_prompt"].format(**state["variables"]) + state["bio_result"][0]
+        thinking_mode_limitation_prompt = self.config["THINKING_MODE_LIMITATION_PROMPT"]
+
+        if state["classifier_result"] == "Non-thinking":
+            config_mode = "CHAT_MODEL_CONFIG"
+            filled_system_prompt = state["system_prompt"].format(**state["variables"]) + state["bio_result"][0]
+        else:
+            config_mode = "CHAT_MODEL_CONFIG_THINKING_MODE"
+            filled_system_prompt = state["system_prompt"].format(**state["variables"]) + thinking_mode_limitation_prompt + state["bio_result"][0]
 
         conversation_messages = [
             message
@@ -2222,12 +2233,14 @@ class ChatAgent:
 
             response_generator = self.llm.create_completion(
                 prompt = full_prompt,
-                max_tokens = self.config["CHAT_MODEL_CONFIG"].get("max_tokens", 16),
-                temperature = self.config["CHAT_MODEL_CONFIG"].get("temperature", 0.8),
-                top_p = self.config["CHAT_MODEL_CONFIG"].get("top_p", 0.95),
-                min_p = self.config["CHAT_MODEL_CONFIG"].get("min_p", 0.05),
-                stop = self.config["CHAT_MODEL_CONFIG"].get("stop", []),
-                top_k = self.config["CHAT_MODEL_CONFIG"].get("top_k", 40),
+                max_tokens = self.config[config_mode].get("max_tokens", 16),
+                temperature = self.config[config_mode].get("temperature", 0.8),
+                top_p = self.config[config_mode].get("top_p", 0.95),
+                min_p = self.config[config_mode].get("min_p", 0.05),
+                stop = self.config[config_mode].get("stop", []),
+                top_k = self.config[config_mode].get("top_k", 40),
+                presence_penalty= self.config[config_mode].get("presence_penalty", 0.3),
+                repeat_penalty= self.config[config_mode].get("repeat_penalty", 1.05),
                 stream = True,    
             )
 
@@ -2243,12 +2256,14 @@ class ChatAgent:
 
             response_generator = self.llm.create_chat_completion(
                 messages = openai_formatted_trimmed_messages,
-                max_tokens = self.config["CHAT_MODEL_CONFIG"].get("max_tokens", 16),
-                temperature = self.config["CHAT_MODEL_CONFIG"].get("temperature", 0.8),
-                top_p = self.config["CHAT_MODEL_CONFIG"].get("top_p", 0.95),
-                min_p = self.config["CHAT_MODEL_CONFIG"].get("min_p", 0.05),
-                stop = self.config["CHAT_MODEL_CONFIG"].get("stop", []),
-                top_k = self.config["CHAT_MODEL_CONFIG"].get("top_k", 40),  
+                max_tokens = self.config[config_mode].get("max_tokens", 16),
+                temperature = self.config[config_mode].get("temperature", 0.8),
+                top_p = self.config[config_mode].get("top_p", 0.95),
+                min_p = self.config[config_mode].get("min_p", 0.05),
+                stop = self.config[config_mode].get("stop", []),
+                top_k = self.config[config_mode].get("top_k", 40),
+                presence_penalty= self.config[config_mode].get("presence_penalty", 0.3),
+                repeat_penalty= self.config[config_mode].get("repeat_penalty", 1.05),  
                 stream = True,
             )
 
@@ -2279,7 +2294,7 @@ class ChatAgent:
         print(f"현재 Bio 추출 버퍼에 쌓인 쿼리 수: {self.bio_extraction_buffer['query_count']}")
 
         end_time_for_generate = time.time()
-        print(f"Bio generate 실행 시간: {end_time_for_generate - start_time_for_generate:.5f}초")
+        print(f"메인 답변 생성 실행 시간: {end_time_for_generate - start_time_for_generate:.5f}초")
 
         return {
             "variables": state["variables"],
@@ -2341,12 +2356,14 @@ class ChatAgent:
 
             response_data = self.llm.create_completion(
                 prompt = full_prompt,
-                max_tokens = self.config["CHAT_MODEL_CONFIG"].get("max_tokens", 16),
-                temperature = self.config["CHAT_MODEL_CONFIG"].get("temperature", 0.8),
-                top_p = self.config["CHAT_MODEL_CONFIG"].get("top_p", 0.95),
-                min_p = self.config["CHAT_MODEL_CONFIG"].get("min_p", 0.05),
-                stop = self.config["CHAT_MODEL_CONFIG"].get("stop", []),
-                top_k = self.config["CHAT_MODEL_CONFIG"].get("top_k", 40),    
+                max_tokens = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("max_tokens", 16),
+                temperature = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("temperature", 0.8),
+                top_p = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("top_p", 0.95),
+                min_p = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("min_p", 0.05),
+                stop = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("stop", []),
+                top_k = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("top_k", 40),
+                presence_penalty = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("presence_penalty", 0.0),
+                repeat_penalty = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("repeat_penalty", 1.0),
             )
 
             pprint(response_data)
@@ -2355,12 +2372,14 @@ class ChatAgent:
         else:
             response_data = self.llm.create_chat_completion(
                 messages = openai_formatted_trimmed_messages,
-                max_tokens = self.config["CHAT_MODEL_CONFIG"].get("max_tokens", 16),
-                temperature = self.config["CHAT_MODEL_CONFIG"].get("temperature", 0.8),
-                top_p = self.config["CHAT_MODEL_CONFIG"].get("top_p", 0.95),
-                min_p = self.config["CHAT_MODEL_CONFIG"].get("min_p", 0.05),
-                stop = self.config["CHAT_MODEL_CONFIG"].get("stop", []),
-                top_k = self.config["CHAT_MODEL_CONFIG"].get("top_k", 40),  
+                max_tokens = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("max_tokens", 16),
+                temperature = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("temperature", 0.8),
+                top_p = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("top_p", 0.95),
+                min_p = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("min_p", 0.05),
+                stop = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("stop", []),
+                top_k = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("top_k", 40),
+                presence_penalty = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("presence_penalty", 0.0),
+                repeat_penalty = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("repeat_penalty", 1.0),  
             )
 
             pprint(response_data)

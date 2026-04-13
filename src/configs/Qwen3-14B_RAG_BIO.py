@@ -23,15 +23,48 @@ CONFIG = {
         "verbose": True,
         
         # function: create_completion
-        "max_tokens": -1,
+        "max_tokens": 512,
         "temperature": 0.6,
         "top_p": 0.95,
         "min_p": 0,
         "stop": ["<|endoftext|>", "<|im_end|>"],
-        "presence_penalty": 1.5,
+        "presence_penalty": 0.5,
         "repeat_penalty": 1.0,
         "top_k": 20,
     },
+
+    "CHAT_MODEL_CONFIG_TOOL_MODE": {
+        "max_tokens": 64,
+        "temperature": 0.1,
+        "top_p": 0.8,
+        "top_k": 10,
+        "min_p": 0.05,
+        "stop": ["<|endoftext|>", "<|im_end|>"],
+        "presence_penalty": 0,
+        "repeat_penalty": 1.0,
+    },
+
+    "CHAT_MODEL_CONFIG_THINKING_MODE": {
+        "max_tokens": 512,
+        "temperature": 0.35,
+        "top_p": 0.9,
+        "top_k": 20,
+        "min_p": 0,
+        "stop": ["<|endoftext|>", "<|im_end|>"],
+        "presence_penalty": 0.3,
+        "repeat_penalty": 1.05,
+    },
+
+    "CHAT_MODEL_CONFIG_BIO_EXTRACTION": {
+        "max_tokens": 512,
+        "temperature": 0.1,
+        "top_p": 0.8,
+        "top_k": 10,
+        "min_p": 0.05,
+        "stop": ["<|endoftext|>", "<|im_end|>"],
+        "presence_penalty": 0.0,
+        "repeat_penalty": 1.0,
+    },     
 
     # 임베딩 모델 설정
 
@@ -84,6 +117,12 @@ CONFIG = {
     "SYSTEM_PROMPT": """
     You are a helpful assistant. The response language is {language}. Please provide short, concise, and clear answer to the user's question.
     """,
+
+    "THINKING_MODE_LIMITATION_PROMPT": """
+    Limit reasoning to only essential steps.
+    Do not over-think.
+    """,
+
 
     "BIO_EXTRACTION_PROMPT": """
 # Role: Selective Memory Architect (Memory Tagger)
