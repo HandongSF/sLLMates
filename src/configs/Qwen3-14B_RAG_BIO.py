@@ -70,6 +70,7 @@ CONFIG = {
 
     "BIO_CONFIG": {
         "retrieval_threshold": float(1.0),
+        "retrieval_threshold_kor": float(1.15),
         "top_k": 5,
         "extraction_token_threshold": 512,
     },
@@ -81,60 +82,118 @@ CONFIG = {
     },
 
     "SYSTEM_PROMPT": """
-    You are a helpful assistant. The response language is {language}.
+    You are a helpful assistant. The response language is {language}. Please provide short, concise, and clear answer to the user's question.
     """,
 
     "BIO_EXTRACTION_PROMPT": """
-    # Role: Selective Memory Architect for Pet Bot
+# Role: Selective Memory Architect (Memory Tagger)
 
-    You are a highly selective memory management system. Your goal is to distinguish between transient "small talk" and "meaningful information" that defines a user's identity and deepens the emotional bond. 
+Your task is to extract atomic facts from the conversation and assign an Importance Score (1-5).
 
-    # Scoring Objectives (Total: 15pts)
-    Evaluate each potential memory in the <think> section using these criteria:
+# Importance Rubric (Strict)
+1: Noise (Greetings, simple reactions like "okay", "wow")
+2: Ephemeral (Current mood, immediate context, temporary states)
+3: Preferences (Likes/dislikes, hobbies, habits, names of friends)
+4: Life Pillars (Career, studies, long-term goals, social status)
+5: Core Bio (Name, Age, Job, Nationality, MBTI - Mark is_core: true)
 
-    1. **Relational Depth (Max 6pts)**
-    - 1-2pts: Peripheral facts (Weather, routine chatter).
-    - 3-4pts: Personal preferences & Daily routines (Food, hobbies, habits).
-    - 5-6pts: Identity & Social Anchors (Life direction, affiliations like school/work, core values, and future goals).
+# Operational Rules
+- **ATOMICITY**: Extract each distinct fact as a separate <bio> block.
+- **SPO FORMAT**: Use "User Predicate Object" (e.g., "User majors in AI Engineering").
+- **SCORE LIMIT**: Use ONLY integers 1, 2, 3, 4, 5.
 
-    2. **Emotional & Appraisal Impact (Max 4pts)**
-    - 1-2pts: Routine/Minor relevance (Daily events, temporary moods, short-term plans).
-    - 3-4pts: High/Critical relevance (Life transitions, major milestones, changes in environment or social status).
+# Output Format
+<think>
+1. Fact Extraction: [List candidate facts]
+2. Scoring: [Fact] -> [Why it's useful/persistent] -> [Score]
+3. Core Check: [Is it Name/Age/Job/Nationality/MBTI?]
+</think>
 
-    3. **Interactional Utility (Max 5pts)**
-    - 1-2pts: Low utility; unlikely to be meaningful in the long term.
-    - 3-4pts: Good conversational bridge; shows the bot is paying attention.
-    - 5pts: Relational Keynote (Unique names of institutions, people, or critical triggers).
+<bio>
+content: [SPO Sentence]
+importance: [1-5]
+is_core: [true/false]
+</bio>
+    
+[Repeat <bio> blocks for every identified fact in the conversation.]
 
-    # Storage & Filtering Rules (CRITICAL)
-    - **Importance Score:** The final `importance` is the `Total Score` (Range: 1 to 15).
-    - **Core Bio Rule:** Information regarding Name, Age, Job, Nationality, Sex, and MBTI is automatically assigned a **Score of 15** and marked `is_core: true`.
-    - **Atomic Memory:** Extract EACH distinct fact as a separate `<bio>` block. Do not combine multiple facts.
-    - **SPO Format:** Write the content as a concise `User [Predicate] [Object]` sentence. (e.g., "User likes hiking").
-        
-    # Output Format
-    - Strictly output the following XML-style structure.
-    - Even for low-score information, generate the <bio> tag (Filtering will be handled by the parser).
+Below are the conversation sentences made by the user:
+""",
 
-    <think>
-    [Step-by-step scoring for each fact: Depth(?) + Emotion(?) + Utility(?) = Total Score.]
-    [Check for Core Bio Rule]
-    </think>
+    'BIO_EXTRACTION_PROMPT_V2': """
+# Role: Selective Memory Architect (Memory Tagger)
 
-    <bio>
-    content: [SPO Sentence]
-    importance: [Total Score (1-15)]
-    is_core: [true/false]
-    </bio>
+Extract useful user facts from the conversation and assign an importance score (1-5).
 
-    [Repeat <bio> blocks for every identified fact in the conversation.]
+# Importance Rubric
+1: Noise (greetings, filler)
+2: Temporary (current mood, short-term context)
+3: Preferences (food, hobbies, habits)
+4: Stable attributes (education, job, long-term roles)
+5: Core identity (name, age, job, nationality, education)
 
-    Below are the conversations between the user and you:
+# Rules
+- Extract atomic but non-redundant facts
+- Prefer concise natural sentences (not rigid SPO)
+- Only store information useful for future interactions
+- Avoid duplicates or overly similar facts
+
+# Output Format
+<bio>
+content: ...
+importance: 1-5
+is_core: true/false
+</bio>
+
+Return ONLY <bio> blocks. No explanation.
+
+User conversation:
+    """,
+
+    'BIO_EXTRACTION_PROMPT_V3': """
+
+    """,
+
+    "BIO_EXTRACTION_PROMPT_KOR": """
+# Role: 개인 맞춤형 메모리 설계자 (Memory Tagger)
+
+당신의 임무는 사용자(User)와의 대화에서 원자 단위의 사실(Atomic Facts)을 추출하고, 중요도 점수(1-5)를 부여하는 것입니다.
+
+# 중요도 산정 기준 (Strict)
+1점: 노이즈 (인사, 단순 리액션, "응", "와" 같은 추임새)
+2점: 휘발성 정보 (현재 기분, "지금 ~하고 있어"와 같은 일시적 상태, 단순 정황)
+3점: 개인적 취향 (좋아함/싫어함, 취미, 습관, 지인/가족 이름)
+4점: 삶의 기둥 (직업, 전공, 거주지, 장기적인 목표, 핵심 가치관)
+5점: 핵심 정체성 (이름, 나이, 국적, 성별, MBTI - 반드시 is_core: true로 표시)
+
+# 실행 규칙
+- **원자성(Atomicity)**: 하나의 <bio> 태그에는 오직 하나의 사실만 담으세요.
+- **문장 형식**: "사용자는 대상을 서술함" 형태의 간결한 한국어 평서문을 사용하세요. (예: "사용자는 AI 공학을 전공함")
+- **점수 제한**: 반드시 정수 1, 2, 3, 4, 5만 사용하세요. 사소한 대화는 엄격하게 1점을 부여하세요.
+
+# 출력 형식
+<think>
+1. 정보 추출: [후보 사실들 나열]
+2. 점수 산정: [사실] -> [이유/지속성 판단] -> [점수]
+3. 핵심 정보 체크: [이름/나이/직업/국적/MBTI 여부 확인]
+</think>
+
+<bio>
+content: [한국어 평서문]
+importance: [1-5]
+is_core: [true/false]
+</bio>
+
+아래는 사용자의 대화 문장들입니다:
     """,
 
     "BIO_EXPLANATION_PROMPT": """
 ### Background Context
-Refer to this shared context to keep your response personal and naturally informed:
+Below are pieces of your internal knowledge about the user. Use them as your "implicit background knowledge" to inform your suggestions naturally, without ever explicitly mentioning or citing them:
+""",
+
+    "BIO_EXPLANATION_PROMPT_KOR": """
+아래의 정보는 당신이 이미 알고 있는 사용자의 배경 지식이니, 대화 시 절대로 '기억'이나 '취향'을 근거로 언급하지 말고 오랜 친구로서의 직관인 것처럼 자연스럽게 답변에 반영하세요:
 """,
 
     "CORE_BIO_EXPLANATION_PROMPT": """

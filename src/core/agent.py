@@ -30,7 +30,7 @@ from apscheduler.triggers.cron import CronTrigger
 from src.config import SELECTED_CONFIG_FILE, SQLITE_DB_FILE
 from src.db.vector_store import ChromaDBManager
 from src.db.bio_metadata import BioMetadata
-from src.core.parsers import parse_llm_output, convert_messages_to_llama3_messages, parse_bio_with_importance
+from src.core.parsers import parse_llm_output, convert_messages_to_llama3_messages, parse_bio_with_importance, parse_query_for_bio
 
 
 langchain.debug = True
@@ -67,9 +67,6 @@ class State(TypedDict):
     bio_result: Optional[Tuple[str, str]]
     """bio memory 검색 결과를 시스템 컨텍스트로 변환한 문자열"""
 
-    bio_extraction_buffer: Optional[Dict[str, any]]
-    """bio extraction을 위해 query들을 모아놓는 버퍼, token count도 포함"""
-
     upcoming_thread_id: Optional[str]
     """현재 대화 스레드 ID (대화창이 바뀔 때 bio 추출 실행)"""
 
@@ -98,6 +95,9 @@ class ChatAgent:
     """llama.cpp의 키-값 캐시 스냅샷 (바이너리 형태)"""
 
     current_thread_id: Optional[str]
+
+    bio_extraction_buffer: Optional[Dict[str, any]]
+    """bio extraction을 위해 query들을 모아놓는 버퍼, token count도 포함"""
 
     formatter: any
 
@@ -219,6 +219,12 @@ class ChatAgent:
         self.bio_metadata = BioMetadata(self.chroma_db_manager.get_bio_store())
 
         self.bio_cleanup_scheduler()
+
+        self.bio_extraction_buffer= {
+                "queries": [],
+                "token_count": 0,
+                "query_count": 0
+            }
 
         self.current_thread_id = None
 
@@ -795,8 +801,17 @@ class ChatAgent:
     # branch name: bio
 
     def bio_retrieve_bio_memory(self, state: State):
+        if self.kv_cache_snapshot is not None:
+            start_time = time.time()
+            self.llm.load_state(self.kv_cache_snapshot) # KV 캐시 스냅샷 로드
+            self.kv_cache_snapshot = None # 로드 후 스냅샷 초기화
+            print("Bio Memory 실행 후, 이전 대화 KV 캐시 스냅샷이 로드되었습니다.")
+            end_time = time.time()
+            print(f"KV 캐시 스냅샷 로드에 걸린 시간: {end_time - start_time:.2f} seconds")
+
+
         top_k = self.config["BIO_CONFIG"].get("top_k", 5)
-        threshold = self.config["BIO_CONFIG"].get("retrieval_threshold", 1.0)
+        threshold = self.config["BIO_CONFIG"].get("retrieval_threshold_kor", 1.15)
 
         core_data = self.bio_metadata.get_bio_chroma_collection()._collection.get(
         where={"is_core": True}  
@@ -811,14 +826,16 @@ class ChatAgent:
         else:
             bio_core_result = ""
 
-        vector = self.bio_metadata.get_embedding_function().embed_query(state["query"].content)
+        parse_query_for_bio_result = parse_query_for_bio(state["query"].content)
+
+        vector = self.bio_metadata.get_embedding_function().embed_query(parse_query_for_bio_result)
         retrieved_bio = self.bio_metadata.get_bio_chroma_collection()._collection.query(
             query_embeddings=[vector],
             n_results = top_k,
             include = ["documents", "metadatas", "distances"]
         )
 
-        bio_general_result = self.config["BIO_EXPLANATION_PROMPT"]
+        bio_general_result = self.config["BIO_EXPLANATION_PROMPT_KOR"]
         general_docs = []
 
         if retrieved_bio['documents'] and retrieved_bio['documents'][0]:
@@ -828,6 +845,7 @@ class ChatAgent:
                 metadata = retrieved_bio["metadatas"][0][i]
 
                 if distance <= threshold and not metadata.get("is_core", False):
+                    print(f"Bio memory retrieved with distance {distance}: {content}")
                     general_docs.append(content)
 
         if general_docs:
@@ -841,15 +859,8 @@ class ChatAgent:
         }
 
     def bio_generate(self, state: State):
+        start_time_for_generate = time.time()
         
-        start_time = time.time()
-        if self.kv_cache_snapshot is not None:
-            self.llm.load_state(self.kv_cache_snapshot) # KV 캐시 스냅샷 로드
-            self.kv_cache_snapshot = None # 로드 후 스냅샷 초기화
-            print("Bio Memory 실행 후, 이전 대화 KV 캐시 스냅샷이 로드되었습니다.")
-        end_time = time.time()
-        print(f"KV 캐시 스냅샷 로드에 걸린 시간: {end_time - start_time:.2f} seconds")
-
         filled_system_prompt = state["system_prompt"].format(**state["variables"]) + state["bio_result"][0]
 
         conversation_messages = [
@@ -905,18 +916,18 @@ class ChatAgent:
 
         add_messages = [state["query"]] + [response]
 
-        if state.get("bio_extraction_buffer") is None:
-            state["bio_extraction_buffer"] = {
-                "queries": [],
-                "token_count": 0
-            }
 
-        state["bio_extraction_buffer"]["queries"].append(state["query"].content)
-        state["bio_extraction_buffer"]["token_count"] += self.get_num_tokens_from_query(state["query"])
+        self.bio_extraction_buffer["queries"].append(state["query"].content)
+        self.bio_extraction_buffer["token_count"] += self.get_num_tokens_from_query(state["query"])
+        self.bio_extraction_buffer["query_count"] += 1
         print(f"현재 추가된 Bio 추출 버퍼 쿼리: {state['query'].content}")
         print(f"현재 추가된 쿼리 토큰 수: {self.get_num_tokens_from_query(state['query'])}")
-        print(f"현재 Bio 추출 버퍼에 쌓인 토큰 수: {state['bio_extraction_buffer']['token_count']}")
-        
+        print(f"현재 Bio 추출 버퍼에 쌓인 토큰 수: {self.bio_extraction_buffer['token_count']}")
+        print(f"현재 Bio 추출 버퍼에 쌓인 쿼리 수: {self.bio_extraction_buffer['query_count']}")
+
+        end_time_for_generate = time.time()
+        print(f"Bio generate 실행 시간: {end_time_for_generate - start_time_for_generate:.5f}초")
+
         return {
             "variables": state["variables"],
             "system_prompt": state["system_prompt"],
@@ -925,20 +936,19 @@ class ChatAgent:
             "messages": None,
             "tools_result": None,
             "query": state["query"],
-            "bio_extraction_buffer": state["bio_extraction_buffer"],
             "final_answer": response
         }
     
     def bio_check_for_bio_extraction(self, state: State):
         upcoming_id = state.get("upcoming_thread_id")
-        buffer = state.get("bio_extraction_buffer")
+        buffer = self.bio_extraction_buffer
         threshold = self.config.get("BIO_CONFIG", {}).get("extraction_token_threshold", 512)
         
-        if not buffer or not buffer.get("queries"):
+        if buffer.get("query_count", 0) == 0:
             return "skip_bio_extraction"
 
-        # 대화창이 바뀌었을 경우
-        is_new_thread = upcoming_id and upcoming_id != self.current_thread_id
+        # 대화창이 바뀌었을 때 (upcoming_thread_id가 현재 thread_id와 다르고, 버퍼에 쌓인 쿼리가 2개 이상일 때)
+        is_new_thread = upcoming_id and upcoming_id != self.current_thread_id and buffer.get("query_count", 0) > 1
         
         # 버퍼에 쌓인 토큰 수가 임계치 이상일 경우
         is_threshold_met = buffer.get("token_count", 0) >= threshold
@@ -952,6 +962,8 @@ class ChatAgent:
             print("버퍼에 쌓인 토큰 수가 임계치를 초과하여 Bio 추출을 시작합니다.")
             return "extract_bio"
 
+        self.current_thread_id = upcoming_id # ID 업데이트 (대화창이 바뀌지 않았더라도 ID는 업데이트)
+
         return "skip_bio_extraction"
 
     def bio_extract_and_save_bio_memory(self, state:State):
@@ -960,8 +972,8 @@ class ChatAgent:
         self.kv_cache_snapshot = self.llm.save_state() # KV 캐시 스냅샷 저장
         print("Bio Memory 실행 전, 현재 대화 KV 캐시 스냅샷이 저장되었습니다.")
 
-        bio_extraction_prompt = self.config["BIO_EXTRACTION_PROMPT"]
-        buffer_messages = [HumanMessage(content=q) for q in state["bio_extraction_buffer"]["queries"]]
+        bio_extraction_prompt = self.config["BIO_EXTRACTION_PROMPT_KOR"]
+        buffer_messages = [HumanMessage(content=q) for q in self.bio_extraction_buffer["queries"]]
 
         trimmed_messages = self.trimmer.invoke([SystemMessage(bio_extraction_prompt)] + buffer_messages)
 
@@ -1012,6 +1024,11 @@ class ChatAgent:
         end = time.time()
 
         print(f"extract_and_save_bio_memory 실행 시간: {end - start:.5f}초")
+        self.bio_extraction_buffer= {
+                "queries": [],
+                "token_count": 0,
+                "query_count": 0
+            }
 
         return {
             "variables": state["variables"],
@@ -1021,7 +1038,6 @@ class ChatAgent:
             "messages": state["messages"],
             "tools_result": state["tools_result"],
             "bio_result": state["bio_result"],
-            "bio_extraction_buffer": None,
             "query": state["query"],
             "final_answer": None
         }
