@@ -228,7 +228,7 @@ is_core: [true/false]
 
     "BIO_EXPLANATION_PROMPT": """
 ### Background Context
-Below are pieces of your internal knowledge about the user. Use them as your "implicit background knowledge" to inform your suggestions naturally, without ever explicitly mentioning or citing them:
+Use below information as SECRET hints to give more connected answer to user. Do NOT mention these explicitly:
 """,
 
     "BIO_EXPLANATION_PROMPT_KOR": """
@@ -286,6 +286,100 @@ Keep this core profile in mind to stay consistent with the user's background:
     },
 
     "CUSTOM_CHAT_TEMPLATE": r"""
+    {%- if tools %} 
+        {{- '<|im_start|>system\n' }} 
+        {%- if messages[0].role == 'system' %} 
+            {{- messages[0].content + '\n\n' }} 
+        {%- endif %} 
+        {{- "# Tool Selector\n\nYou are a tool selector that has access to external tools. Actively choose any tools that would help answer the user's query below and return as the function signature format.\nIf the user is greeting or making small talk or no tool is needed, just return nothing (an empty string). \n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>" }}
+        {%- for tool in tools %} 
+            {{- "\n" }} 
+            {{- tool | tojson }} 
+        {%- endfor %} 
+        {{- "\n</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{\"name\": <function-name>, \"arguments\": <args-json-object>}\n</tool_call><|im_end|>\n" }} 
+    {%- else %} 
+        {%- if messages[0].role == 'system' %} 
+            {{- '<|im_start|>system\n' + messages[0].content + '<|im_end|>\n' }} 
+        {%- endif %} 
+    {%- endif %} 
+    
+    {%- set ns = namespace(multi_step_tool=true, last_query_index=messages|length - 1) %} 
+    
+    {%- for index in range(ns.last_query_index, -1, -1) %} 
+        {%- set message = messages[index] %} 
+        {%- if ns.multi_step_tool and message.role == "user" and not('<tool_response>' in message.content and '</tool_response>' in message.content) %} 
+            {%- set ns.multi_step_tool = false %} 
+            {%- set ns.last_query_index = index %} 
+        {%- endif %} 
+    {%- endfor %} 
+    {%- for message in messages %} 
+        {%- if (message.role == "user") or (message.role == "system" and not loop.first) %} 
+            {{- '<|im_start|>' + message.role + '\n' + message.content + '<|im_end|>' + '\n' }} 
+        {%- elif message.role == "assistant" %} 
+            {%- set content = message.content %} 
+            {%- set reasoning_content = '' %} 
+            {%- if message.reasoning_content is defined and message.reasoning_content is not none %} 
+                {%- set reasoning_content = message.reasoning_content %} 
+            {%- else %} 
+                {%- if '</think>' in message.content %} 
+                    {%- set content = message.content.split('</think>')[-1].lstrip('\n') %} 
+                    {%- set reasoning_content = message.content.split('</think>')[0].rstrip('\n').split('<think>')[-1].lstrip('\n') %} 
+                {%- endif %} 
+            {%- endif %} 
+            {%- if loop.index0 > ns.last_query_index %} 
+                {%- if loop.last or (not loop.last and reasoning_content) %} 
+                    {{- '<|im_start|>' + message.role + '\n<think>\n' + reasoning_content.strip('\n') + '\n</think>\n\n' + content.lstrip('\n') }} 
+                {%- else %} 
+                    {{- '<|im_start|>' + message.role + '\n' + content }} 
+                {%- endif %} 
+            {%- else %} 
+                {{- '<|im_start|>' + message.role + '\n' + content }} 
+            {%- endif %} 
+
+            {%- if message.tool_calls %} 
+                {%- for tool_call in message.tool_calls %} 
+                    {%- if (loop.first and content) or (not loop.first) %} 
+                        {{- '\n' }} 
+                    {%- endif %} 
+                    {%- if tool_call.function %} 
+                        {%- set tool_call = tool_call.function %} 
+                    {%- endif %} 
+                    {{- '<tool_call>\n{"name": "' }} 
+                    {{- tool_call.name }} {{- '", "arguments": ' }} 
+                    {%- if tool_call.arguments is string %} 
+                        {{- tool_call.arguments }} 
+                    {%- else %} 
+                        {{- tool_call.arguments | tojson }} 
+                    {%- endif %} 
+                    {{- '}\n</tool_call>' }} 
+                {%- endfor %} 
+            {%- endif %} 
+            {{- '<|im_end|>\n' }} 
+            
+        {%- elif message.role == "tool" %} 
+            {%- if loop.first or (messages[loop.index0 - 1].role != "tool") %} 
+                {{- '<|im_start|>user' }} 
+            {%- endif %} 
+            {{- '\n<tool_response>\n' }} 
+            {{- message.content }} 
+            {{- '\n</tool_response>' }} 
+            {%- if loop.last or (messages[loop.index0 + 1].role != "tool") %} 
+                {{- '<|im_end|>\n' }} 
+            {%- endif %} 
+        {%- endif %} 
+    {%- endfor %} 
+
+    {%- set add_generation_prompt = True %} 
+    
+    {%- if add_generation_prompt %} 
+        {{- '<|im_start|>assistant\n' }} 
+        {%- if enable_thinking is defined and enable_thinking is false %} 
+            {{- '<think>\n\n</think>\n\n' }} 
+        {%- endif %} 
+    {%- endif %}
+    """,
+
+    "_CUSTOM_CHAT_TEMPLATE": r"""
     {%- if tools %} 
         {{- '<|im_start|>system\n' }} 
         {%- if messages[0].role == 'system' %} 
@@ -378,5 +472,6 @@ Keep this core profile in mind to stay consistent with the user's background:
         {%- endif %} 
     {%- endif %}
     """,
+
 
 }

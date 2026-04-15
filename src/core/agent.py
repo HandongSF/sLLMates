@@ -842,7 +842,7 @@ class ChatAgent:
             include = ["documents", "metadatas", "distances"]
         )
 
-        bio_general_result = self.config["BIO_EXPLANATION_PROMPT_KOR"]
+        bio_general_result = self.config["BIO_EXPLANATION_PROMPT"]
         general_docs = []
 
         if retrieved_bio['documents'] and retrieved_bio['documents'][0]:
@@ -2074,10 +2074,11 @@ class ChatAgent:
         }
 
     def fusiontool_v2_query_or_respond(self, state: State):
-        filled_system_prompt = state["system_prompt"].format(**state["variables"])
+        #filled_system_prompt = state["system_prompt"].format(**state["variables"])
 
-        trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + [state["query"]])
-
+        #trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + [state["query"]])
+        trimmed_messages = self.trimmer.invoke([state["bio_result"][0]] +[ToolMessage(content=state["bio_result"][1], tool_call_id="temp")] +[state["query"]])
+        
         openai_formatted_trimmed_messages = convert_to_openai_messages(trimmed_messages)
 
         openai_formatted_tools = [convert_to_openai_tool(tool) for tool in self.tool_list]
@@ -2088,8 +2089,7 @@ class ChatAgent:
                 tools = openai_formatted_tools,
             ).prompt
 
-            if state["classifier_result"] == "Non-thinking":
-                full_prompt += '<think>\n\n</think>\n\n'
+            full_prompt += '<think>\n\n</think>\n\n' # query_or_respond에서는 항상 non-thinking 모드로
 
             print(full_prompt)
             print('\n\n\n\n')

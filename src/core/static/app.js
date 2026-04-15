@@ -147,7 +147,7 @@ els.newChatBtn.addEventListener("click", async () => {
 
   clearMessages();
   showEmpty(false);
-  appendMessage("assistant", "✨ 새 채팅이 시작되었습니다. 무엇을 도와드릴까요?");
+  appendMessage("assistant", "안녕하세요! 무엇을 도와드릴까요?");
   scrollToBottom();
 
   await refreshChatList();
