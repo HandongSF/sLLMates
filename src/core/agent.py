@@ -2175,7 +2175,10 @@ class ChatAgent:
         ]
         
         if state["tools_result"]:
-            trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + state["tools_result"] + [ToolMessage(content=state["bio_result"][1], tool_call_id="temp")] + [state["query"]])
+            #시스템 프롬프트와 과거 대화(히스토리)만 트리머로 길이를 조절
+            trimmed_history = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages)
+            #이번 턴의 필수 메시지는 트리머를 거치지 않고 뒤에 안전하게 이어 붙임
+            trimmed_messages = trimmed_history + [ToolMessage(content=state["bio_result"][1], tool_call_id="temp"), state["query"]] + state["messages"] + state["tools_result"]        
         else:
             trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + [ToolMessage(content=state["bio_result"][1], tool_call_id="temp")] + [state["query"]])
 

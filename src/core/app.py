@@ -46,7 +46,10 @@ def format_history_for_client(thread_data):
         if isinstance(msg, HumanMessage):
             messages.append({"role": "user", "content": msg.content})
         elif isinstance(msg, AIMessage):
-            messages.append({"role": "assistant", "content": msg.content})
+            # <think>...</think> 제거 후 저장
+            clean = re.sub(r"<think>.*?</think>", "", msg.content, flags=re.S).strip()
+            if clean:
+                messages.append({"role": "assistant", "content": clean})
     return messages
 
 
@@ -131,13 +134,11 @@ def stream_response(stream_id):
     thread_id = item["thread_id"]
     message = item["message"]
 
-    # 첫 메시지면 자동 이름 설정
     new_name = None
     try:
-        config_check = {"configurable": {"thread_id": thread_id}}
-        state = agent.app.get_state(config_check)
-        history = format_history_for_client(state.values)
-        if len(history) == 0:
+        current_name = get_chat_name(thread_id)
+        # 이름이 자동생성된 기본 이름 패턴이면 첫 메시지로 판단
+        if current_name and current_name.startswith("채팅 "):
             auto_name = generate_chat_name_from_message(message)
             rename_chat(thread_id, auto_name)
             new_name = auto_name
