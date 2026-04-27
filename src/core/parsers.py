@@ -1,5 +1,6 @@
 import json
 import re
+import string
 from typing import Sequence, List, Dict
 from langchain_core.messages import ToolCall
 from langchain.schema import AIMessage, BaseMessage
@@ -135,9 +136,9 @@ def parse_bio_with_importance(text: str) -> List[Dict[str, any]]:
                 continue
 
             raw_importance = int(importance_match.group(1)) 
-            if raw_importance <= 5:
+            if raw_importance <= 2:
                 continue
-            importance_value = max(1, min(raw_importance - 5, 10))
+            importance_value = max(1, min(raw_importance - 2, 3))
                 
             content = content_match.group(1).strip()
             is_core = is_core_match.group(1).lower() == "true"
@@ -149,3 +150,11 @@ def parse_bio_with_importance(text: str) -> List[Dict[str, any]]:
             })
             
         return bio_list
+
+def parse_query_for_bio(query_string: str) -> str:
+    translator = str.maketrans(string.punctuation, ' ' * len(string.punctuation))
+    parsed_query = query_string.translate(translator)
+    
+    clean_query = ' '.join(parsed_query.split())
+    
+    return clean_query

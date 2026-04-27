@@ -225,7 +225,8 @@ def create_simple_ui(agent: ChatAgent):
                 {
                     "variables": agent.config.get("VARIABLES", {}),
                     "system_prompt": agent.config.get("SYSTEM_PROMPT", ""),
-                    "branch_name": "stream", # 현재는 branch 이름을 수동으로 수정해서 사용할 branch를 변경해야 함
+                    "branch_name": "bio", # 현재는 branch 이름을 수동으로 수정해서 사용할 branch를 변경해야 함
+                    "upcoming_thread_id": thread_id,
                     "classifier_result": None,
                     "messages": None,
                     "tools_result": None,
