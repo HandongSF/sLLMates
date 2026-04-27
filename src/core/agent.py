@@ -326,6 +326,8 @@ class ChatAgent:
             return "fusion"
         elif state.get("branch_name") == "fusiontool":
             return "fusiontool"
+        elif state.get("branch_name") == "fusiontool_v2":
+            return "fusiontool_v2"
         else:
             return "default"
         
@@ -1033,7 +1035,7 @@ class ChatAgent:
                 "queries": [],
                 "token_count": 0,
                 "query_count": 0
-            }
+        }
 
         return {
             "variables": state["variables"],
@@ -1972,6 +1974,387 @@ class ChatAgent:
             "query": state["query"],
             "final_answer": None
         }
+
+    
+    # branch name: fusiontool_v2 (fusiontool + streaming + bio scheduler)
+
+    def fusiontool_v2_check_thinking(self, state: State):
+        if self.classifier_tokenizer == None or self.classifier_llm == None:
+            print("에러: classifier_tokenizer 또는 classifier_llm 없음")
+            sys.exit(1)
+
+        id2label = {0: "Non-thinking", 1: "Thinking"}
+
+        print(">>>query: " + state["query"].content)
+
+        raw_tokens = self.classifier_tokenizer.encode(state["query"].content, add_special_tokens=False)
+
+        if len(raw_tokens) > 510:
+            print(f"Query가 너무 길어 512 토큰에 맞게 자르기 시행 ({len(raw_tokens)} -> 510)")
+            raw_tokens = raw_tokens[:128] + raw_tokens[-382:]
+
+        input_ids = [self.classifier_tokenizer.cls_token_id] + raw_tokens + [self.classifier_tokenizer.sep_token_id]
+
+        inputs = {
+            "input_ids": torch.tensor([input_ids]).to(self.classifier_llm.device),
+            "attention_mask": torch.ones((1, len(input_ids))).to(self.classifier_llm.device)
+        }
+
+        with torch.no_grad():
+            outputs = self.classifier_llm(**inputs)
+    
+        logits = outputs.logits
+        probabilities = torch.nn.functional.softmax(logits, dim=-1)
+        predicted_class_id = torch.argmax(probabilities, dim=-1).item()
+
+        label_name = id2label.get(predicted_class_id, f"LABEL_{predicted_class_id}")
+
+        print(">>Label_name: " + label_name)
+
+        return {
+            "classifier_result": label_name,
+        }
+    
+    def fusiontool_v2_retrieve_bio_memory(self, state: State):
+        if self.kv_cache_snapshot is not None:
+            start_time = time.time()
+            self.llm.load_state(self.kv_cache_snapshot) # KV 캐시 스냅샷 로드
+            self.kv_cache_snapshot = None # 로드 후 스냅샷 초기화
+            print("Bio Memory 실행 후, 이전 대화 KV 캐시 스냅샷이 로드되었습니다.")
+            end_time = time.time()
+            print(f"KV 캐시 스냅샷 로드에 걸린 시간: {end_time - start_time:.2f} seconds")
+
+
+        top_k = self.config["BIO_CONFIG"].get("top_k", 5)
+        threshold = self.config["BIO_CONFIG"].get("retrieval_threshold_kor", 1.15)
+
+        core_data = self.bio_metadata.get_bio_chroma_collection()._collection.get(
+        where={"is_core": True}  
+        )
+
+        core_docs = core_data.get("documents", [])
+
+        if core_docs:
+            bio_core_result = self.config["CORE_BIO_EXPLANATION_PROMPT"]
+            for doc in core_docs:
+                bio_core_result += f"- {doc}\n"
+        else:
+            bio_core_result = ""
+
+        parse_query_for_bio_result = parse_query_for_bio(state["query"].content)
+
+        vector = self.bio_metadata.get_embedding_function().embed_query(parse_query_for_bio_result)
+        retrieved_bio = self.bio_metadata.get_bio_chroma_collection()._collection.query(
+            query_embeddings=[vector],
+            n_results = top_k,
+            include = ["documents", "metadatas", "distances"]
+        )
+
+        bio_general_result = self.config["BIO_EXPLANATION_PROMPT"]
+        general_docs = []
+
+        if retrieved_bio['documents'] and retrieved_bio['documents'][0]:
+            for i in range(len(retrieved_bio['documents'][0])):
+                distance = retrieved_bio['distances'][0][i]
+                content = retrieved_bio['documents'][0][i]
+                metadata = retrieved_bio["metadatas"][0][i]
+
+                if distance <= threshold and not metadata.get("is_core", False):
+                    print(f"Bio memory retrieved with distance {distance}: {content}")
+                    general_docs.append(content)
+
+        if general_docs:
+            for doc in general_docs:
+                bio_general_result += f"- {doc}\n"
+        else:
+            bio_general_result = ""
+
+        return {
+            "bio_result": [bio_core_result, bio_general_result],
+        }
+
+    def fusiontool_v2_query_or_respond(self, state: State):
+        #filled_system_prompt = state["system_prompt"].format(**state["variables"])
+
+        #trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + [state["query"]])
+        trimmed_messages = self.trimmer.invoke([state["bio_result"][0]] +[ToolMessage(content=state["bio_result"][1], tool_call_id="temp")] +[state["query"]])
+        
+        openai_formatted_trimmed_messages = convert_to_openai_messages(trimmed_messages)
+
+        openai_formatted_tools = [convert_to_openai_tool(tool) for tool in self.tool_list]
+
+        if self.formatter:            
+            full_prompt = self.formatter(
+                messages = openai_formatted_trimmed_messages,
+                tools = openai_formatted_tools,
+            ).prompt
+
+            full_prompt += '<think>\n\n</think>\n\n' # query_or_respond에서는 항상 non-thinking 모드로
+
+            print(full_prompt)
+            print('\n\n\n\n')
+
+            response_data = self.llm.create_completion(
+                prompt = full_prompt,
+                max_tokens = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("max_tokens", 16),
+                temperature = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("temperature", 0.8),
+                top_p = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("top_p", 0.95),
+                min_p = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("min_p", 0.05),
+                stop = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("stop", []),
+                top_k = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("top_k", 40),
+                presence_penalty = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("presence_penalty", 0.3),
+                repeat_penalty = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("repeat_penalty", 1.05),
+                stream = False,
+            )
+
+            pprint(response_data)
+            print('\n\n\n\n')
+
+            text_output = response_data['choices'][0]['text'].strip()
+        else:
+            print("formatter = None")
+
+            response_data = self.llm.create_chat_completion(
+                messages = openai_formatted_trimmed_messages,
+                tools = openai_formatted_tools,
+                max_tokens = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("max_tokens", 16),
+                temperature = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("temperature", 0.8),
+                top_p = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("top_p", 0.95),
+                min_p = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("min_p", 0.05),
+                stop = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("stop", []),
+                top_k = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("top_k", 40),
+                presence_penalty = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("presence_penalty", 0.3),
+                repeat_penalty = self.config["CHAT_MODEL_CONFIG_TOOL_MODE"].get("repeat_penalty", 1.05),
+                stream = False,
+            )
+
+            pprint(response_data)
+
+            text_output = response_data['choices'][0]['message']['content'].strip()
+        
+        response = parse_llm_output(text_output)
+
+        pprint(response)
+        print('\n\n\n\n')
+ 
+        if response.tool_calls:
+            return {
+                "messages": [response],
+            }
+
+        return
+
+    def fusiontool_v2_check_for_tools(self, state: State):
+        if state.get("messages"):
+            return "tools"
+        else:
+            return "no_tool"
+
+    def fusiontool_v2_run_tools_and_pass_through_state(self, state: State):
+        tools_result = self.tools.invoke(state["messages"])
+
+        return {
+            "tools_result": tools_result,
+        }
+
+    def fusiontool_v2_generate(self, state: State, writer: StreamWriter):
+        start_time_for_generate = time.time()
+        thinking_mode_limitation_prompt = self.config["THINKING_MODE_LIMITATION_PROMPT"]
+
+        if state["classifier_result"] == "Non-thinking":
+            config_mode = "CHAT_MODEL_CONFIG"
+            filled_system_prompt = state["system_prompt"].format(**state["variables"]) + state["bio_result"][0]
+        else:
+            config_mode = "CHAT_MODEL_CONFIG_THINKING_MODE"
+            filled_system_prompt = state["system_prompt"].format(**state["variables"]) + thinking_mode_limitation_prompt + state["bio_result"][0]
+
+        conversation_messages = [
+            message
+            for message in state["history"]
+            if message.type in ("human") or (message.type == "ai" and not message.tool_calls)
+        ]
+        
+        if state["tools_result"]:
+            trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + state["tools_result"] + [ToolMessage(content=state["bio_result"][1], tool_call_id="temp")] + [state["query"]])
+        else:
+            trimmed_messages = self.trimmer.invoke([SystemMessage(filled_system_prompt)] + conversation_messages + [ToolMessage(content=state["bio_result"][1], tool_call_id="temp")] + [state["query"]])
+
+        openai_formatted_trimmed_messages = convert_to_openai_messages(trimmed_messages)
+
+        pprint(openai_formatted_trimmed_messages)
+
+        if self.formatter:
+            full_prompt = self.formatter(
+                messages = openai_formatted_trimmed_messages,
+            ).prompt
+
+            if state["classifier_result"] == "Non-thinking":
+                full_prompt += '<think>\n\n</think>\n\n'
+
+            print(full_prompt)
+
+            response_generator = self.llm.create_completion(
+                prompt = full_prompt,
+                max_tokens = self.config[config_mode].get("max_tokens", 16),
+                temperature = self.config[config_mode].get("temperature", 0.8),
+                top_p = self.config[config_mode].get("top_p", 0.95),
+                min_p = self.config[config_mode].get("min_p", 0.05),
+                stop = self.config[config_mode].get("stop", []),
+                top_k = self.config[config_mode].get("top_k", 40),
+                presence_penalty= self.config[config_mode].get("presence_penalty", 0.3),
+                repeat_penalty= self.config[config_mode].get("repeat_penalty", 1.05),
+                stream = True,    
+            )
+
+            pprint(response_generator)
+
+            text_output = ""
+            for chunk in response_generator:
+                token = chunk['choices'][0]['text']
+                text_output += token
+                writer({"final_answer": token})
+        else:
+            print("formatter = None")
+
+            response_generator = self.llm.create_chat_completion(
+                messages = openai_formatted_trimmed_messages,
+                max_tokens = self.config[config_mode].get("max_tokens", 16),
+                temperature = self.config[config_mode].get("temperature", 0.8),
+                top_p = self.config[config_mode].get("top_p", 0.95),
+                min_p = self.config[config_mode].get("min_p", 0.05),
+                stop = self.config[config_mode].get("stop", []),
+                top_k = self.config[config_mode].get("top_k", 40),
+                presence_penalty= self.config[config_mode].get("presence_penalty", 0.3),
+                repeat_penalty= self.config[config_mode].get("repeat_penalty", 1.05),  
+                stream = True,
+            )
+
+            pprint(response_generator)
+
+            text_output = ""
+            for chunk in response_generator:
+                token = chunk['choices'][0]['message']['content']
+                text_output += token
+                writer({"final_answer": token})
+
+        response = parse_llm_output(text_output)
+
+        pprint(response)
+
+        if state["tools_result"]:
+            add_messages = [state["query"]] + state["messages"] + state["tools_result"] + [response]
+        else:
+            add_messages = [state["query"]] + [response]
+
+        # keep the queries in bio extraction buffer
+        self.bio_extraction_buffer["queries"].append(state["query"].content)
+        self.bio_extraction_buffer["token_count"] += self.get_num_tokens_from_query(state["query"])
+        self.bio_extraction_buffer["query_count"] += 1
+        print(f"현재 추가된 Bio 추출 버퍼 쿼리: {state['query'].content}")
+        print(f"현재 추가된 쿼리 토큰 수: {self.get_num_tokens_from_query(state['query'])}")
+        print(f"현재 Bio 추출 버퍼에 쌓인 토큰 수: {self.bio_extraction_buffer['token_count']}")
+        print(f"현재 Bio 추출 버퍼에 쌓인 쿼리 수: {self.bio_extraction_buffer['query_count']}")
+
+        end_time_for_generate = time.time()
+        print(f"메인 답변 생성 실행 시간: {end_time_for_generate - start_time_for_generate:.5f}초")
+
+        return {
+            "history": add_messages,
+        }
+    
+    def fusiontool_v2_check_for_bio_extraction(self, state: State):
+        upcoming_id = state.get("upcoming_thread_id")
+        buffer = self.bio_extraction_buffer
+        threshold = self.config.get("BIO_CONFIG", {}).get("extraction_token_threshold", 512)
+        
+        if buffer.get("query_count", 0) == 0:
+            return "skip_bio_extraction"
+
+        # 대화창이 바뀌었을 때 (upcoming_thread_id가 현재 thread_id와 다르고, 버퍼에 쌓인 쿼리가 2개 이상일 때)
+        is_new_thread = upcoming_id and upcoming_id != self.current_thread_id and buffer.get("query_count", 0) > 1
+        
+        # 버퍼에 쌓인 토큰 수가 임계치 이상일 경우
+        is_threshold_met = buffer.get("token_count", 0) >= threshold
+
+        if is_new_thread:
+            self.current_thread_id = upcoming_id # ID 업데이트
+            print("대화창이 변경되어 Bio 추출을 시작합니다.")
+            return "extract_bio"
+            
+        if is_threshold_met:
+            print("버퍼에 쌓인 토큰 수가 임계치를 초과하여 Bio 추출을 시작합니다.")
+            return "extract_bio"
+
+        self.current_thread_id = upcoming_id # ID 업데이트 (대화창이 바뀌지 않았더라도 ID는 업데이트)
+
+        return "skip_bio_extraction"
+
+    def fusiontool_v2_extract_and_save_bio_memory(self, state:State):
+        start = time.time()
+
+        self.kv_cache_snapshot = self.llm.save_state() # KV 캐시 스냅샷 저장
+        print("Bio Memory 실행 전, 현재 대화 KV 캐시 스냅샷이 저장되었습니다.")
+
+        bio_extraction_prompt = self.config["BIO_EXTRACTION_PROMPT_KOR"]
+        buffer_messages = [HumanMessage(content=q) for q in self.bio_extraction_buffer["queries"]]
+
+        trimmed_messages = self.trimmer.invoke([SystemMessage(bio_extraction_prompt)] + buffer_messages)
+
+        openai_formatted_trimmed_messages = convert_to_openai_messages(trimmed_messages)
+
+        if self.formatter:            
+            full_prompt = self.formatter(
+                messages = openai_formatted_trimmed_messages,
+            ).prompt
+
+            response_data = self.llm.create_completion(
+                prompt = full_prompt,
+                max_tokens = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("max_tokens", 16),
+                temperature = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("temperature", 0.8),
+                top_p = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("top_p", 0.95),
+                min_p = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("min_p", 0.05),
+                stop = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("stop", []),
+                top_k = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("top_k", 40),
+                presence_penalty = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("presence_penalty", 0.0),
+                repeat_penalty = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("repeat_penalty", 1.0),
+            )
+
+            pprint(response_data)
+
+            text_output = response_data['choices'][0]['text'].strip()
+        else:
+            response_data = self.llm.create_chat_completion(
+                messages = openai_formatted_trimmed_messages,
+                max_tokens = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("max_tokens", 16),
+                temperature = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("temperature", 0.8),
+                top_p = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("top_p", 0.95),
+                min_p = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("min_p", 0.05),
+                stop = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("stop", []),
+                top_k = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("top_k", 40),
+                presence_penalty = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("presence_penalty", 0.0),
+                repeat_penalty = self.config["CHAT_MODEL_CONFIG_BIO_EXTRACTION"].get("repeat_penalty", 1.0),  
+            )
+
+            pprint(response_data)
+
+            text_output = response_data['choices'][0]['message']['content'].strip()
+        
+        response = parse_llm_output(text_output)
+        
+        if response:
+            bio_list = parse_bio_with_importance(response.content)
+            if bio_list:
+                self.bio_metadata.save_or_update_bio(bio_list)
+        end = time.time()
+
+        print(f"extract_and_save_bio_memory 실행 시간: {end - start:.5f}초")
+        self.bio_extraction_buffer= {
+                "queries": [],
+                "token_count": 0,
+                "query_count": 0
+        }
+
+        return
     
     # 그래프 생성 함수
 
@@ -2019,10 +2402,20 @@ class ChatAgent:
         workflow.add_node("fusiontool_run_tools_and_pass_through_state", self.fusiontool_run_tools_and_pass_through_state)
         workflow.add_node("fusiontool_generate", self.fusiontool_generate)
         workflow.add_node("fusiontool_extract_and_save_bio_memory", self.fusiontool_extract_and_save_bio_memory)
+        # branch name: fusiontool_v2
+        workflow.add_node("fusiontool_v2_check_thinking", self.fusiontool_v2_check_thinking)
+        workflow.add_node("fusiontool_v2_retrieve_bio_memory", self.fusiontool_v2_retrieve_bio_memory)
+        workflow.add_node("fusiontool_v2_query_or_respond", self.fusiontool_v2_query_or_respond)
+        workflow.add_node("fusiontool_v2_check_for_tools", self.fusiontool_v2_check_for_tools)
+        workflow.add_node("fusiontool_v2_run_tools_and_pass_through_state", self.fusiontool_v2_run_tools_and_pass_through_state)
+        workflow.add_node("fusiontool_v2_generate", self.fusiontool_v2_generate)
+        workflow.add_node("fusiontool_v2_check_for_bio_extraction", self.fusiontool_v2_check_for_bio_extraction)
+        workflow.add_node("fusiontool_v2_extract_and_save_bio_memory", self.fusiontool_v2_extract_and_save_bio_memory)
+
 
         # 노드 연결
         # 시작
-        workflow.add_conditional_edges(START, self.router, {"default": "default_generate", "tools": "tools_query_or_respond", "classifier": "classifier_check_thinking", "bio": "bio_retrieve_bio_memory", "stream": "stream_check_thinking", "fusion": "fusion_check_thinking", "fusiontool": "fusiontool_check_thinking"})
+        workflow.add_conditional_edges(START, self.router, {"default": "default_generate", "tools": "tools_query_or_respond", "classifier": "classifier_check_thinking", "bio": "bio_retrieve_bio_memory", "stream": "stream_check_thinking", "fusion": "fusion_check_thinking", "fusiontool": "fusiontool_check_thinking", "fusiontool_v2": "fusiontool_v2_check_thinking"})
         # branch name: default
         workflow.add_edge("default_generate", END)
         # branch name: tools
@@ -2057,6 +2450,14 @@ class ChatAgent:
         workflow.add_edge("fusiontool_run_tools_and_pass_through_state", "fusiontool_generate")
         workflow.add_edge("fusiontool_generate", "fusiontool_extract_and_save_bio_memory")
         workflow.add_edge("fusiontool_extract_and_save_bio_memory", END)
+        # branch name: fusiontool_v2
+        workflow.add_edge("fusiontool_v2_check_thinking", "fusiontool_v2_retrieve_bio_memory")
+        workflow.add_edge("fusiontool_v2_retrieve_bio_memory", "fusiontool_v2_query_or_respond")
+        workflow.add_conditional_edges("fusiontool_v2_query_or_respond", self.fusiontool_v2_check_for_tools, {"no_tool": "fusiontool_v2_generate", "tools": "fusiontool_v2_run_tools_and_pass_through_state"})
+        workflow.add_edge("fusiontool_v2_run_tools_and_pass_through_state", "fusiontool_v2_generate")
+        workflow.add_conditional_edges("fusiontool_v2_generate", self.fusiontool_v2_check_for_bio_extraction, {"extract_bio": "fusiontool_v2_extract_and_save_bio_memory", "skip_bio_extraction": END})
+        workflow.add_edge("fusiontool_v2_extract_and_save_bio_memory", END)
+
 
         # 메모리 추가
         memory = SqliteSaver(conn=sqlite3.connect(SQLITE_DB_FILE, check_same_thread = False))

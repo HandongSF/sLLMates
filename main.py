@@ -16,9 +16,13 @@ if __name__ == "__main__":
     agent = ChatAgent()
 
     print("챗봇 인터페이스 설정")
-    interface = create_simple_ui(agent)
+    #interface = create_simple_ui(agent)
+    flask_app = create_simple_ui(agent)
+ 
 
     print("챗봇 실행")
-    interface.launch(share=True, inbrowser=True, show_error=True)
+    #interface.launch(share=True, inbrowser=True, show_error=True)
+    flask_app.run(debug=False, host="0.0.0.0", port=5000, threaded=True, use_reloader=False,)
+
 
     print("프로그램 종료")
