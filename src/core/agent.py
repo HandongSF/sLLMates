@@ -842,7 +842,7 @@ class ChatAgent:
             include = ["documents", "metadatas", "distances"]
         )
 
-        bio_general_result = self.config["BIO_EXPLANATION_PROMPT"]
+        bio_general_result = self.config["BIO_EXPLANATION_PROMPT_KOR"]
         general_docs = []
 
         if retrieved_bio['documents'] and retrieved_bio['documents'][0]:
