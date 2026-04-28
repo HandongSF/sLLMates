@@ -97,6 +97,7 @@ CONFIG = {
         "chunk_overlap": 50,
         "batch_size": 16,
         "retrieval_k": 5,
+        "threshold": 0.3,
     },
 
     # Bio 설정
