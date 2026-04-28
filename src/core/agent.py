@@ -201,7 +201,9 @@ class ChatAgent:
             if query == "__NONE__":
                 return "No results found.", []
 
-            retrieved_docs = self.chroma_db_manager.get_doc_store().similarity_search(query, k = self.config["RAG_CONFIG"].get("retrieval_k", 5))
+            docs_with_scores = self.chroma_db_manager.get_doc_store().similarity_search_with_relevance_scores(query, k = self.config["RAG_CONFIG"].get("retrieval_k", 5))
+
+            retrieved_docs = [doc for doc, score in docs_with_scores if score >= self.config["RAG_CONFIG"].get("threshold", 0.5)]
 
             if not retrieved_docs:
                 return "No results found.", []
