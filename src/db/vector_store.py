@@ -2,7 +2,7 @@ import sys
 import os
 
 from langchain_community.vectorstores import Chroma
-from langchain_community.document_loaders import TextLoader, DirectoryLoader
+from langchain_community.document_loaders import TextLoader, DirectoryLoader, PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 
@@ -63,6 +63,43 @@ class ChromaDBManager:
             else:
                 print(" 'y' 또는 'n'을 입력해주세요.")
 
+    def _load_txt_documents(self):
+        """DOCUMENTS_PATH 내 모든 .txt 파일을 로드"""
+        loader = DirectoryLoader(
+            DOCUMENTS_PATH,
+            glob="**/*.txt",
+            loader_cls=TextLoader,
+            loader_kwargs={"encoding": "utf-8"},
+        )
+        docs = loader.load()
+        print(f"[ChromaDB] TXT 파일 {len(docs)}개 로드 완료.")
+        return docs
+
+    def _load_pdf_documents(self):
+        """DOCUMENTS_PATH 내 모든 .pdf 파일을 재귀 탐색하여 로드
+        
+        PyPDFLoader는 페이지 단위로 문서를 분리하고,
+        metadata에 source(파일 경로)와 page(페이지 번호)를 자동으로 추가합니다.
+        """
+        pdf_docs = []
+        pdf_files_found = 0
+ 
+        for root, _, files in os.walk(DOCUMENTS_PATH):
+            for filename in files:
+                if filename.lower().endswith(".pdf"):
+                    pdf_path = os.path.join(root, filename)
+                    pdf_files_found += 1
+                    try:
+                        loader = PyPDFLoader(pdf_path)
+                        pages = loader.load()  # 페이지별 Document 리스트 반환
+                        pdf_docs.extend(pages)
+                        print(f"  [PDF] {filename} → {len(pages)}페이지 로드")
+                    except Exception as e:
+                        print(f"  [PDF 오류] {filename} 로드 실패: {e}")
+ 
+        print(f"[ChromaDB] PDF 파일 {pdf_files_found}개, 총 {len(pdf_docs)}페이지 로드 완료.")
+        return pdf_docs
+
     def _create_new_doc_collection(self):
         """기존 컬렉션을 삭제(초기화)하고 문서를 새로 로드하여 저장"""
         temp_db = Chroma(
@@ -73,13 +110,19 @@ class ChromaDBManager:
         temp_db.delete_collection() # 해당 컬렉션 삭제
 
         # 문서 로드
-        loader = DirectoryLoader(
-            DOCUMENTS_PATH,
-            glob="**/*.txt",
-            loader_cls=TextLoader,
-            loader_kwargs={"encoding": "utf-8"}
-        )
-        docs = loader.load()
+        txt_docs = self._load_txt_documents()
+        pdf_docs = self._load_pdf_documents()
+        all_docs = txt_docs + pdf_docs
+
+        if not all_docs:
+            print("[ChromaDB] 경고: 로드된 문서가 없습니다. DOCUMENTS_PATH를 확인하세요.")
+            return Chroma(
+                collection_name="documents",
+                persist_directory=self.db_path,
+                embedding_function=self.embedding_function,
+            )
+ 
+        print(f"[ChromaDB] 전체 로드 문서 수: {len(all_docs)}개 (TXT + PDF 합산)")
 
         # 기존 200은 문맥이 너무 끊길 수 있어 600 정도로 상향 조정
         new_chunk_size = self.config["RAG_CONFIG"].get("chunk_size", 600) 
@@ -89,7 +132,8 @@ class ChromaDBManager:
             chunk_size=new_chunk_size, 
             chunk_overlap=new_chunk_overlap
         )
-        all_splits = text_splitter.split_documents(docs)
+        all_splits = text_splitter.split_documents(all_docs)
+        print(f"[ChromaDB] 총 {len(all_splits)}개의 청크로 분할 완료.")
 
         # 새 컬렉션 생성 및 데이터 추가
         vector_store = Chroma(
