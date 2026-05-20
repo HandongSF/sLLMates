@@ -1,80 +1,66 @@
-# 💬 LangGraph 기반 RAG 챗봇
+# sLLMates
 
-이 프로젝트는 sLLM 모델을 기반으로 **LangGraph**를 사용하여 에이전트 워크플로우를 구성하고, **RAG (Retrieval-Augmented Generation)** 기술을 접목한 다목적 챗봇입니다. 사용자와의 대화 기록은 SQLite 데이터베이스에 영구적으로 저장되며, **Gradio**를 통해 직관적인 웹 UI를 제공합니다.
+[![Static Badge](https://img.shields.io/badge/license-apache_2.0-blue)](https://opensource.org/license/apache-2.0)
 
-[Image of a modern chatbot interface]
+로컬 LLM을 사용하는 에이전트 챗봇 시스템
 
-## ✨ 주요 기능
+## 주요 기능
 
-* **RAG (Retrieval-Augmented Generation)**: `data/documents` 폴더의 텍스트 파일을 기반으로 LLM이 알지 못하는 정보에 대해 답변할 수 있습니다.
-* **에이전트 워크플로우 (LangGraph)**: 단순한 질의응답을 넘어, LLM이 상황에 따라 RAG 검색 도구를 사용할지 스스로 판단하는 능동적인 워크플로우를 가집니다.
-* **영구적인 대화 기록**: 모든 채팅 세션은 SQLite DB에 저장되어 언제든지 이전 대화를 불러오고 이어갈 수 있습니다.
-* **편리한 채팅 관리**: 채팅방 생성, 삭제, 이름 변경 등 사용자 편의 기능을 UI에서 직접 제어할 수 있습니다.
-* **모듈화된 구조**: 설정, UI, 데이터베이스, 핵심 로직이 분리되어 있어 기능 추가 및 유지보수가 용이합니다.
+* 에이전트 시스템: LLM이 사용자의 질의를 해결하기 위해 능동적으로 문제 해결 방법을 구상하고 도구 사용을 판단.
+* LLM 답변 최적화: 사용자 질의의 난이도에 따라 LLM의 Thinking Mode 사용을 제어하여 답변 속도를 최적화.
+* 사용자 맞춤 메모리: 사용자 질의에 포함된 맞춤 정보를 추출 및 저장하여 추후 대화에서 답변 개선에 사용.
+* 대화 기록 관리: 사용자와의 대화 기록을 데이터베이스에 저장.
+* 편리한 채팅 관리: 사용자의 채팅 기록을 채팅방 단위로 관리할 수 있도록 UI에서 기능 제공.
 
----
+## 현재 사용 가능 도구
 
-## 📂 디렉토리 구조
+* RAG(Retrieval-Augmented Generation)
 
-프로젝트는 기능별로 명확하게 분리된 구조를 가집니다.
+## Quick start
 
-```
-rag_chatbot/
-├── data/                 # 데이터(문서, DB) 저장소
-├── models/               # LLM, 임베딩 모델 저장소
-├── src/                  # 전체 소스 코드
-│   ├── config.py         # 경로, 프롬프트 등 핵심 설정
-│   ├── core/             # 모델 로딩, 에이전트, 도구 정의
-│   ├── db/               # 채팅 DB 관리 로직
-│   ├── rag/              # RAG 벡터 저장소 관리
-│   ├── ui/               # Gradio UI 코드
-│   └── utils/            # 보조 함수
-└── main.py               # 애플리케이션 시작점
-└── requirements.txt      # 필요 라이브러리 목록
-```
+### Requirements
 
----
+* Python 3.9 버전 이상 필요
+* GPU(NVIDIA) 사용 시 CUDA Toolkit 설치 필요
 
-## 🛠️ 설치 및 실행 방법
-
-### 1. 사전 준비
-
-* **Python 3.9 이상**이 설치되어 있어야 합니다.
-* GPU(NVIDIA) 사용 시 **CUDA Toolkit**이 설치되어 있어야 합니다.
-
-### 2. 프로젝트 클론 및 설정
+### Clone Project
 
 ```bash
-# 1. 이 저장소를 클론합니다.
-git clone https://your-repository-url/rag_chatbot.git
-cd rag_chatbot
+# Clone project code
+git clone https://github.com/HandongSF/sLLMates.git
 
-# 2. 가상 환경을 생성하고 활성화합니다. (권장)
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-
-# 3. 필요한 라이브러리를 설치합니다.
-pip install -r requirements.txt
+# Move into project folder
+cd sLLMates
 ```
 
-### 3. 모델 및 데이터 준비
-
-다운로드한 모델과 RAG용 문서를 아래 경로에 맞게 배치합니다.
-
-* **LLM 모델**: `/models/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf`
-* **토크나이저**: `/models/Qwen3-4B-Instruct-2507/`
-* **임베딩 모델**: `/models/Qwen3-Embedding-0.6B/`
-* **RAG 문서**: `/data/documents/` 폴더 내에 `.txt` 파일들
-
-### 4. 챗봇 실행
+### Set Enviroment
 
 ```bash
+# Make conda enviroment and install packages
+conda env create -f environment.yml
+
+# Activate conda enviroment
+conda activate sLLMates
+
+# Install Llama-cpp-python with Using CUDA option
+CMAKE_ARGS="-DGGML_CUDA=on" FORCE_CMAKE=1 pip install llama-cpp-python
+```
+
+### Download Model
+
+1. 루트 폴더의 models/ 내부에 허깅페이스 등에서 다운로드한 로컬 모델의 gguf 파일과 기타 모델 파일을 추가(만약 임베딩 모델이 필요할 경우 임베딩 모델은 양자화하지 않은 상태로 넣을 것)
+2. 그리고 루트 폴더의 src/configs/ 내부에 자신의 모델 세팅에 맞는 세팅 파일 제작 후 추가  
+
+### Start Project
+
+```bash
+# Start project
 python main.py
+
+# 만약 GPU를 2개 이상 사용한다면 세팅 파일의 tensor_split 옵션 조정 후 아래 명령어 사용
+# CUDA_VISIBLE_DEVICES=0,1,... python main.py
 ```
-터미널에 출력되는 URL(예: `http://127.0.0.1:7860`)을 웹 브라우저에서 열어 챗봇을 사용하세요.
 
----
+## Other documentation
 
-## ⚙️ 작동 원리 (아키텍처)
-
-이 챗봇은 다음과 같은 흐름으로 사용자의 입력을 처리합니다.
+시스템 구조, 내부 원리 등은 루트 폴더의 docs 내부 문서를 참조
